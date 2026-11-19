@@ -1,6 +1,6 @@
 {
   "id": "statblock-forge-forked-atlas-vtt-compatibility",
-  "name": "Forked Atlas VTT Compatibility for Statblock Forge",
+  "name": "Statblock Forge: Forked Atlas VTT Compatibility",
   "version": "0.17.0",
   "minAppVersion": "1.8.7",
   "description": "Statblock Forge: Forked Atlas VTT Compatibility is an community fork of Atlas VTT with dedicated compatibility for Statblock Forge. It is not made, endorsed or supported by Atlas VTT or Atlas Online.",

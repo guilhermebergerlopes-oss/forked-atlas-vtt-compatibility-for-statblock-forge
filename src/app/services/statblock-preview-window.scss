@@ -29,7 +29,10 @@ $controls-end-radius: atlas-panel-inset-radius-value($controls-inset, $control *
     @include atlas-statblock-preview-closing;
   }
 
-  // The statblock's React root: the card stays a flex item of the window, which caps its height.
+  // Provider cards (such as Forge) receive a definite window height from JS after
+  // their first render. Their own card/body flex chain then owns the scrollport.
+  // Keep the mount transparent so the provider render container is the window's
+  // direct flex item and can shrink with the bounded window.
   &__content {
     display: contents;
   }

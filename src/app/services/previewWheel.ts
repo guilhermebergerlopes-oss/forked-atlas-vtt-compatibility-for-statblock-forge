@@ -1,4 +1,4 @@
-import { WHEEL_LINE_PX } from '../react/hooks/useTabStripOverflow';
+import { WHEEL_LINE_PX } from '../utils/wheelUnits';
 
 /** Less than this left to scroll is rounding: a scroll offset is fractional on a scaled screen, its maximum is not. */
 const SCROLL_END_SLACK_PX = 0.5;
@@ -17,12 +17,18 @@ function canMove(overflow: string, offset: number, maxOffset: number, delta: num
 
 /** Scrolls the nearest box from the wheel's target up to the preview that can still move, as the browser's own scrolling picks. */
 function scrollNearestBox(event: WheelEvent, preview: HTMLElement): void {
-  const target = event.target as Node;
-  if (!target.instanceOf(Element)) return;
-  for (let box: Element | null = target; box; box = box.parentElement) {
+  const target = event.target as Node | null;
+  // Wheel targets normally are Elements, but using nodeType also handles SVG
+  // and text-node targets without relying on Obsidian's cross-realm helpers.
+  const start = target?.nodeType === 1 ? target as Element : target?.parentElement ?? null;
+  if (!start) return;
+
+  for (let box: Element | null = start; box; box = box.parentElement) {
+    const view = box.ownerDocument.defaultView;
+    if (!view) continue;
     const across = inPixels(event.deltaX, event, box.clientWidth);
     const down = inPixels(event.deltaY, event, box.clientHeight);
-    const { overflowX, overflowY } = box.win.getComputedStyle(box);
+    const { overflowX, overflowY } = view.getComputedStyle(box);
     const movesAcross = canMove(overflowX, box.scrollLeft, box.scrollWidth - box.clientWidth, across);
     const movesDown = canMove(overflowY, box.scrollTop, box.scrollHeight - box.clientHeight, down);
     if (movesAcross) box.scrollLeft += across;

@@ -14,6 +14,7 @@ import type { ViewFrame } from '../packages/components/primitives/popoverFit';
 import { viewFrame } from '../packages/components/primitives/useKeepInView';
 import { observeResize } from '../utils/observeResize';
 import { scrollOnCtrlWheel } from './previewWheel';
+import { setProviderPreviewWindowHeight } from './providerPreviewScroll';
 import { holdPreviewShown } from '../react/components/statblock/previewShown';
 import { t } from '../i18n';
 import { portalHost } from '../host/portalHost';
@@ -150,6 +151,7 @@ export class StatblockPreviewWindow {
     const request = this.providerRender;
     const mountPoint = this.providerMountPoint;
     if (!request || !mountPoint || this.closing || this.reactRoot) return;
+    this.element?.style.removeProperty('height');
     try {
       const session = startProviderStatblockPreview(request, mountPoint);
       if (!session) {
@@ -157,7 +159,12 @@ export class StatblockPreviewWindow {
         return;
       }
       this.providerSession = session;
-      void session.ready.catch((error: unknown) => {
+      // Wait until the provider has actually inserted its render container before
+      // measuring the intrinsic statblock height and constraining this flex window.
+      void session.ready.then(() => {
+        if (this.providerSession !== session || this.closing) return;
+        this.syncProviderPreviewWindowHeight();
+      }).catch((error: unknown) => {
         if (this.providerSession !== session || this.closing) return;
         this.disposeProviderRender();
         console.warn('[Atlas fork] Forge statblock preview could not be mounted; using the native fallback.', error);
@@ -165,8 +172,25 @@ export class StatblockPreviewWindow {
       });
     } catch (error) {
       console.warn('[Atlas fork] Forge statblock preview could not be started; using the native fallback.', error);
+      this.element?.style.removeProperty('height');
       this.renderStatblock(this.currentVitals);
     }
+  }
+
+  /**
+   * Measures provider output after it is mounted, then gives the flex window a
+   * definite height. A max-height by itself does not reliably make an auto-sized
+   * flex column shrink in Chromium's WebView, so the Forge body never overflowed.
+   * Short sheets keep their natural size; long sheets are capped to the viewport.
+   */
+  private syncProviderPreviewWindowHeight(): void {
+    const element = this.element;
+    const mountPoint = this.providerMountPoint;
+    if (!element || !mountPoint || !this.providerSession) return;
+
+    const gaps = previewEdgeGaps(element.ownerDocument, 20);
+    const maxWindowHeight = Math.max(0, element.win.innerHeight - gaps.block * 2 - (this.controls?.offsetHeight ?? 0));
+    setProviderPreviewWindowHeight(element, mountPoint, maxWindowHeight);
   }
 
   /** Refreshes provider data when Atlas' persisted instance snapshot changes. */
@@ -189,6 +213,8 @@ export class StatblockPreviewWindow {
       if (result === 'remount-required') {
         this.disposeProviderRender();
         this.mountProviderRender();
+      } else {
+        this.syncProviderPreviewWindowHeight();
       }
     }).catch((error: unknown) => {
       if (this.providerSession !== session || this.closing) return;
@@ -201,6 +227,7 @@ export class StatblockPreviewWindow {
   private disposeProviderRender(): void {
     const session = this.providerSession;
     this.providerSession = null;
+    this.element?.style.removeProperty('height');
     if (!session) return;
     try { session.dispose(); }
     catch (error) { console.warn('[Atlas fork] Forge statblock preview cleanup failed.', error); }
@@ -286,6 +313,7 @@ export class StatblockPreviewWindow {
       this.setPosition(this.initialPos.x, this.initialPos.y);
     } else if (this.element && this.reach) {
       keepPreviewReachable(this.element, this.reach);
+      this.syncProviderPreviewWindowHeight();
     }
   }
 
@@ -307,6 +335,7 @@ export class StatblockPreviewWindow {
       // Cap the window to the viewport first, so the measurement below is of
       // the clamped box; the card body scrolls when the statblock is taller.
       this.element.style.maxHeight = `${winHeight - gaps.block * 2 - above}px`;
+      this.syncProviderPreviewWindowHeight();
 
       const rect = this.element.getBoundingClientRect();
       const elementWidth = rect.width || 400;
