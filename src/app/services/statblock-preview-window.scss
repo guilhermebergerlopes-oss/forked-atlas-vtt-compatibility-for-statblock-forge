@@ -95,7 +95,6 @@ $controls-end-radius: atlas-panel-inset-radius-value($controls-inset, $control *
 }
 
 .atlas-statblock-preview-window__controls .atlas-statblock-preview-window__button {
-  @include atlas-corner-shape;
   @include atlas-ghost-button;
   display: grid;
   place-items: center;

@@ -339,10 +339,6 @@ $link-stack-below: 720px;
     margin-right: auto;
   }
 
-  &__new.btn {
-    @include atlas-modal-corner-control(bottom-left);
-  }
-
   &__unlink.btn {
     margin-right: auto;
 

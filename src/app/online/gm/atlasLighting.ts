@@ -7,7 +7,7 @@ import type { SightRules } from '../../vision/sightRules';
 import type { SceneState } from './atlasView.ts';
 
 /** The fork plugin id, whose instance holds its settings. */
-export const ATLAS_PLUGIN_ID = 'statblock-forge-atlas-compat';
+export const ATLAS_PLUGIN_ID = 'statblock-forge-forked-atlas-vtt-compatibility';
 
 /**
  * What the GM's own lighting of a tab works its scene out by: the sight rules of the map's

@@ -5,7 +5,7 @@ import { field } from './atlasLighting.ts';
 import type { SceneState } from './atlasView.ts';
 
 /** The fork's command that shows the active map tab's scene on the player view, as the eye on a scene tab does. */
-export const PRESENT_COMMAND = 'statblock-forge-atlas-compat:send-map-to-player-view';
+export const PRESENT_COMMAND = 'statblock-forge-forked-atlas-vtt-compatibility:send-map-to-player-view';
 
 /** The scene tab the fork presents to its player view (`PresentedScene`): its tab id, map file and level. */
 export interface Presented {
@@ -52,7 +52,7 @@ export function readPresented(state: unknown): Presented | null {
 /** Atlas's presented scene as its plugin instance offers it (`presentedScene`), or null when it has none. */
 export function presentedSceneSource(app: App): PresentedSceneSource | null {
   // Obsidian keeps the loaded plugins by id in `app.plugins.plugins`.
-  const source = field(field(field(field(app, 'plugins'), 'plugins'), 'statblock-forge-atlas-compat'), 'presentedScene');
+  const source = field(field(field(field(app, 'plugins'), 'plugins'), 'statblock-forge-forked-atlas-vtt-compatibility'), 'presentedScene');
   return typeof field(source, 'get') === 'function' && typeof field(source, 'onChange') === 'function' ? (source as PresentedSceneSource) : null;
 }
 

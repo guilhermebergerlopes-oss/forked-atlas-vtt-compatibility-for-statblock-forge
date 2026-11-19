@@ -10,7 +10,7 @@ import type { BestiaryLookup } from '../../creatures/linkedCreature';
 import { TemplateLibrary } from '../library/TemplateLibrary';
 import type { ResolvedStatblock, TemplateLookup } from '../model/resolvedTypes';
 import { isBuiltInTemplateId } from '../model/templateTypes';
-import { resolveStatblock } from './resolveStatblock';
+import { resolveStatblockWithDetails, type StatblockResolutionDetails } from './resolveStatblock';
 
 /**
  * The app's template library as the resolver's lookup: templates as saved.
@@ -33,11 +33,18 @@ export function libraryLoaded(library: TemplateLibrary): Promise<void> {
 }
 
 /**
- * A vault note's statblock (`resolveStatblock`), or null when it defines none
- * Atlas can read. A native note whose template the library has not read yet
- * is read again once it has, so its meanings and renamed keys count.
+ * A vault note's statblock plus Forge-owned source metadata, or null when it
+ * defines none Atlas can read. A native note whose template the library has
+ * not read yet is read again once it has, so meanings and renamed keys count.
+ * Keeping the details at this boundary lets source-aware consumers (Resources,
+ * initiative and token synchronization) use Forge Field definitions without
+ * expanding the shared ResolvedStatblock contract.
  */
-export async function readStatblock(app: App, path: string, bestiary?: BestiaryLookup): Promise<ResolvedStatblock | null> {
+export async function readStatblockWithDetails(
+  app: App,
+  path: string,
+  bestiary?: BestiaryLookup,
+): Promise<StatblockResolutionDetails | null> {
   const waiting = new Set<TemplateLibrary>();
   const templates: TemplateLookup = {
     get: (id) => {
@@ -47,9 +54,14 @@ export async function readStatblock(app: App, path: string, bestiary?: BestiaryL
     },
   };
   const context = { templates, ...(bestiary && { bestiary }) };
-  const resolved = await resolveStatblock(app, path, context);
+  const details = await resolveStatblockWithDetails(app, path, context);
   const [library] = waiting;
-  if (!library || resolved?.templateStatus !== 'missing') return resolved;
+  if (!library || details?.statblock.templateStatus !== 'missing') return details;
   await libraryLoaded(library);
-  return resolveStatblock(app, path, context);
+  return resolveStatblockWithDetails(app, path, context);
+}
+
+/** The public statblock-only view; callers that need source metadata use the detailed read. */
+export async function readStatblock(app: App, path: string, bestiary?: BestiaryLookup): Promise<ResolvedStatblock | null> {
+  return (await readStatblockWithDetails(app, path, bestiary))?.statblock ?? null;
 }

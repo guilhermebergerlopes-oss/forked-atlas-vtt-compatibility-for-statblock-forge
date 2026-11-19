@@ -1,7 +1,7 @@
 import React from 'react';
 
 export const FORK_COMMUNITY_NOTICE =
-  'Statblock Forge: Fork for Atlas VTT is a community extension. It is not made, endorsed or supported by Atlas VTT or Atlas Online.';
+  'Statblock Forge: Forked Atlas VTT Compatibility is a community extension. It is not made, endorsed or supported by Atlas VTT or Atlas Online.';
 export const FORK_SUPPORT_URL =
   'https://github.com/guilhermebergerlopes-oss/statblock-forge-for-atlas-vtt/issues';
 

@@ -1,7 +1,7 @@
 import { isNewerRelease } from '../changelog/version';
 
 /** Device-local: the newest version the GM acted on in its notice (Update, What's new, or closed it). */
-export const UPDATE_STORAGE_KEY = 'statblock-forge-atlas-compat:update-announced';
+export const UPDATE_STORAGE_KEY = 'statblock-forge-forked-atlas-vtt-compatibility:update-announced';
 
 export interface UpdateWatchDeps {
   installed: string;

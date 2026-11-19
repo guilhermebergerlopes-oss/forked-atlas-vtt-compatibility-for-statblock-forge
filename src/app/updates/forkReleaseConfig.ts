@@ -5,7 +5,7 @@
  * polling and update notices remain disabled rather than pointing users at
  * releases of a different plugin.
  */
-export const FORK_PLUGIN_ID = 'statblock-forge-atlas-compat';
+export const FORK_PLUGIN_ID = 'statblock-forge-forked-atlas-vtt-compatibility';
 export const FORK_MANIFEST_URL: string | null = null;
 export const FORK_RELEASES_URL: string | null = null;
 export const FORK_PLUGIN_PAGE_URL: string | null = null;

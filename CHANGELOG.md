@@ -1,4 +1,4 @@
-# Statblock Forge: Fork for Atlas VTT changelog
+# Statblock Forge: Forked Atlas VTT Compatibility changelog
 
 <!-- Generated from changelog/*.md. Run npm run changelog:generate. -->
 

@@ -1,8 +1,8 @@
-Statblock Forge: Fork for Atlas VTT is a community extension. It is not made, endorsed or supported by Atlas VTT or Atlas Online. [Support and issue reporting](https://github.com/guilhermebergerlopes-oss/statblock-forge-for-atlas-vtt/issues).
+Statblock Forge: Forked Atlas VTT Compatibility is a community extension. It is not made, endorsed or supported by Atlas VTT or Atlas Online. [Support and issue reporting](https://github.com/guilhermebergerlopes-oss/statblock-forge-for-atlas-vtt/issues).
 > **Fork updates:** automatic update polling is intentionally disabled until this fork has its own public release repository and Obsidian listing. The plugin does not check or offer upstream Atlas releases as updates.
 
 
-# Statblock Forge: Fork for Atlas VTT
+# Statblock Forge: Forked Atlas VTT Compatibility
 
 This project is a modified fork of Atlas VTT 0.17.0, originally created by Fabian Urbanek and distributed under AGPL-3.0-only. The Statblock Forge compatibility fork is created and maintained by **Guilherme Berger Lopes**. It retains upstream copyright, licence and third-party notices while carrying a separate plugin identity and Statblock Forge integration.
 
@@ -61,7 +61,7 @@ Requires **Obsidian 1.8.7 or newer on desktop**. This fork is distributed separa
 
 1. Open **Settings → Community plugins** and turn off **Restricted mode** if it is enabled.
 2. Download this fork's release assets from its own repository and place them in the plugin folder shown below.
-3. Enable **Statblock Forge: Fork for Atlas VTT** under Community plugins.
+3. Enable **Statblock Forge: Forked Atlas VTT Compatibility** under Community plugins.
 
 The fork will publish updates through its own GitHub releases once its repository is available; automatic release polling remains disabled until the fork has its own manifest endpoint and Obsidian listing.
 
@@ -76,7 +76,7 @@ The imports stay on your device. The XLSX reader uses the `http://schemas.openxm
 <details>
 <summary>Manual installation</summary>
 
-Download `main.js`, `manifest.json`, and `styles.css` from a release of this fork (not the upstream Atlas VTT releases). Place them in `<your vault>/.obsidian/plugins/statblock-forge-atlas-compat/`, then enable **Statblock Forge: Fork for Atlas VTT** under **Settings → Community plugins**.
+Download `main.js`, `manifest.json`, and `styles.css` from a release of this fork (not the upstream Atlas VTT releases). Place them in `<your vault>/.obsidian/plugins/statblock-forge-forked-atlas-vtt-compatibility/`, then enable **Statblock Forge: Forked Atlas VTT Compatibility** under **Settings → Community plugins**.
 
 </details>
 
@@ -96,7 +96,7 @@ If you use an external image URL for a token or map background, or copy an exter
 
 ## Help and contributing
 
-For issues specific to this fork, use the instructions in [SUPPORT.md](./SUPPORT.md). Please do not submit fork-specific bug reports to the upstream Atlas VTT project. For bugs in inherited upstream functionality that also occur in the original Atlas VTT release, consult the [upstream project](https://github.com/ByteMirror/atlas-vtt). To contribute to this fork, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For issues specific to this fork, use the instructions in [SUPPORT.md](./SUPPORT.md). Please do not submit fork-specific bug reports to the upstream Atlas VTT project. For bugs in inherited upstream functionality that also occur in the original Atlas VTT release, consult the [upstream project](https://github.com/ByteMirror/atlas-vtt).
 
 <details>
 <summary>Build from source</summary>

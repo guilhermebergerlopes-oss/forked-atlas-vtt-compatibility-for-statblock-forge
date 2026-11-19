@@ -80,6 +80,8 @@ export class NotePreviewUIManager {
    */
   private mapUnloading = false;
   private activePreviews: Map<string, IPreviewWindow> = new Map();
+  /** Deduplicates first-hover creation when modifier-key events arrive together. */
+  private readonly forgeInstanceCreations = new Map<string, Promise<void>>();
   private isModifierKeyDown = false;
   /** Counts `hideAllUnpinnedPreviews`, so a preview decided after a read knows it was hidden or replaced meanwhile. */
   private hideCount = 0;
@@ -328,6 +330,40 @@ export class NotePreviewUIManager {
     }
   }
 
+  /** Create the provider instance on first Ctrl-hover, without guessing ambiguous bindings. */
+  private async ensureForgeSheetInstance(sceneId: string, tokenId: string, sourceId: string): Promise<void> {
+    const api = this.sheetsAPI;
+    if (!api) return;
+    const key = `${sceneId}::${tokenId}::${sourceId}`;
+    const pending = this.forgeInstanceCreations.get(key);
+    if (pending) return pending;
+
+    const operation = (async (): Promise<void> => {
+      try {
+        const provider = api.sheets.getProviderDescriptor('statblock-forge');
+        if (!provider?.capabilities.includes('rendering')) return;
+        const existing = api.sheets.getInstances(sceneId).filter((instance) =>
+          instance.sceneId === sceneId
+          && instance.tokenId === tokenId
+          && instance.source.providerId === 'statblock-forge'
+          && instance.source.sourceId === sourceId,
+        );
+        if (existing.length > 0) return;
+        await api.sheets.createInstance({
+          sceneId,
+          source: { providerId: 'statblock-forge', sourceId },
+          tokenId,
+        });
+      } catch (error) {
+        console.warn('[Atlas] Could not create the Forge sheet instance for this token:', error);
+      }
+    })();
+
+    this.forgeInstanceCreations.set(key, operation);
+    try { await operation; }
+    finally { if (this.forgeInstanceCreations.get(key) === operation) this.forgeInstanceCreations.delete(key); }
+  }
+
   public async showOrCreatePreview(
     pin: PreviewAnchor,
     screenX: number,
@@ -402,9 +438,23 @@ export class NotePreviewUIManager {
           && latestState.mapLoaded
           && latestState.mapPath === sceneIdAtHover
           && latestLinkedPath === linkedPath;
-        const providerResolution = source?.kind === 'forge' && stillSameSceneAndLink
+        let providerResolution = source?.kind === 'forge' && stillSameSceneAndLink
           ? resolveForgeStatblockPreviewForToken(this.sheetsAPI, sceneIdAtHover, pin.id, linkedPath)
           : null;
+        if (providerResolution?.status === 'missing' && sceneIdAtHover && stillSameSceneAndLink) {
+          await this.ensureForgeSheetInstance(sceneIdAtHover, pin.id, linkedPath);
+          // A provider read can outlive the hover. Recheck the scene, token link and hide epoch.
+          const afterCreateState = this.store.getState();
+          const afterCreateToken = afterCreateState.mapLoaded ? mapTokens(afterCreateState.objects)[pin.id] : null;
+          const afterCreatePath = afterCreateToken && 'statblockPath' in afterCreateToken
+            && typeof afterCreateToken.statblockPath === 'string'
+            ? linkedFilePath(afterCreateToken.statblockPath)
+            : null;
+          if (this.destroyed || this.mapUnloading || hides !== this.hideCount
+            || !afterCreateState.mapLoaded || afterCreateState.mapPath !== sceneIdAtHover
+            || afterCreatePath !== linkedPath) return;
+          providerResolution = resolveForgeStatblockPreviewForToken(this.sheetsAPI, sceneIdAtHover, pin.id, linkedPath);
+        }
         const providerRender = providerResolution?.status === 'ready' ? providerResolution.request : undefined;
         if (providerResolution && providerResolution.status !== 'ready' && providerResolution.status !== 'missing') {
           // An unavailable provider or ambiguous mapping deliberately uses the existing

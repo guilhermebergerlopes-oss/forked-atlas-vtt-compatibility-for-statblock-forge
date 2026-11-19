@@ -27,7 +27,7 @@ export const settings: Translation = {
   'settings.support.joinDiscord': 'Присоединиться',
   'settings.support.openGithub': 'Открыть GitHub',
   'settings.support.reportIssue': 'Сообщить о проблеме',
-  'settings.support.reportIssueDesc': 'Отправить отчёт из Atlas с версиями Atlas и Obsidian. Аккаунт GitHub не нужен. Также доступно командой «Сообщить о проблеме».',
+  'settings.support.reportIssueDesc': "Отправьте отчёт о проблеме в исходный проект Atlas VTT с указанием версий Atlas и Obsidian. Для этого форка используйте ссылку поддержки Statblock Forge выше. Аккаунт GitHub не нужен. Также доступно командой «Сообщить о проблеме».",
   'settings.support.suggestFeature': 'Предложить функцию',
   'settings.support.suggestFeatureDesc': 'Расскажите, что сделает Atlas лучше за вашим столом.',
   'settings.tutorials.firstTime': 'Каждое обучение показывается при первом открытии своей функции.',

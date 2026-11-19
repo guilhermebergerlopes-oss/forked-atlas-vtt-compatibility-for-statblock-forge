@@ -10,7 +10,7 @@ const ATLAS_PREFIX = '[Atlas]';
 const MAX_MESSAGE_LENGTH = 400;
 
 function isAtlasStack(value: unknown): boolean {
-  return value instanceof Error && typeof value.stack === 'string' && (value.stack.includes('statblock-forge-atlas-compat') || value.stack.includes('atlas-vtt'));
+  return value instanceof Error && typeof value.stack === 'string' && (value.stack.includes('statblock-forge-forked-atlas-vtt-compatibility') || value.stack.includes('atlas-vtt'));
 }
 
 function timestamp(): string {

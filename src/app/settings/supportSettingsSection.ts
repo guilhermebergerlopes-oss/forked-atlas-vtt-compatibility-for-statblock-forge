@@ -19,7 +19,6 @@ export function supportSettingsSection(reporter: IssueReporter): AtlasSettingSec
       },
       {
         name: t('settings.support.reportIssue'),
-        desc: 'Use this form for issues in the original Atlas VTT project. For this fork, use the Statblock Forge fork support link above.',
         desc: t('settings.support.reportIssueDesc'),
         aliases: ['bug', 'crash', 'problem', 'feedback', 'github', 'support'],
         render: setting => {

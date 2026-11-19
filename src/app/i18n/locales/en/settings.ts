@@ -39,7 +39,7 @@ export const settings = {
   'settings.support.joinDiscord': 'Join Discord',
   'settings.support.openGithub': 'Open GitHub',
   'settings.support.reportIssue': 'Report an issue',
-  'settings.support.reportIssueDesc': 'Submit a report from Atlas with your Atlas and Obsidian versions. No GitHub account is needed. Also available as the "Report an issue" command.',
+  'settings.support.reportIssueDesc': "Submit a report to the original Atlas VTT project with your Atlas and Obsidian versions. For this fork, use the Statblock Forge support link above. No GitHub account is needed. Also available as the \"Report an issue\" command.",
   'settings.support.suggestFeature': 'Suggest a feature',
   'settings.support.suggestFeatureDesc': 'Tell us what would make Atlas better at your table.',
   'settings.tutorials.firstTime': 'Each tutorial shows the first time you open its feature.',

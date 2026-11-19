@@ -90,7 +90,8 @@ function ResolvedView(props: LinkedStatblockProps & { templateId: TemplateId | n
   }
   // A Fantasy Statblocks source is drawn by that plugin after the global resolver identifies it.
   if (result.kind === 'statblock' && result.statblock.source.kind === 'forge') {
-    // The native Forge renderer is integrated in Step 4; do not misrender Forge values through Fantasy Statblocks.
+    // Forge-native notes are drawn by the registered Forge provider in token previews.
+    // Outside a provider-backed preview, do not misrender Forge values through Fantasy Statblocks.
     return <Hint>{t('statblockEditor.noAtlasStatblock')}</Hint>;
   }
   if (result.kind === 'statblock') return <FantasyView {...props} />;

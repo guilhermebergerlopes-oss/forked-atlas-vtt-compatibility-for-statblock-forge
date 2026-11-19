@@ -57,8 +57,16 @@ export function formatMessage(message: Message, rules: Intl.PluralRules, values?
 /** The text for `key` in the active language, falling back to English; see `formatMessage` for `values`. */
 export function t(key: MessageKey, values?: MessageValues): string {
   const own = translation[key];
-  if (own === undefined) return formatMessage(en[key], DEFAULT_PLURAL_RULES, values);
-  return formatMessage(own, pluralRules, values);
+  if (own !== undefined) return formatMessage(own, pluralRules, values);
+
+  // Dynamic translation keys can be absent from the English catalogue (for example,
+  // when stored data contains a newer enum value than this plugin knows). Never let
+  // that turn plugin startup into `undefined.other` in formatMessage.
+  const fallback = en[key];
+  if (fallback !== undefined) return formatMessage(fallback, DEFAULT_PLURAL_RULES, values);
+
+  console.warn(`[Atlas VTT] Missing translation key: ${String(key)}`);
+  return String(key);
 }
 
 /** Joins `items` as the active language does: "a, b and c". */

@@ -76,13 +76,13 @@ function pendingRelease(root, version) {
 }
 
 function formatRelease(release) {
-  return `# Statblock Forge: Fork for Atlas VTT ${release.version} — ${release.title}\n\n${release.date}\n\n${nestHeadings(release.markdown, 2)}\n`;
+  return `# Statblock Forge: Forked Atlas VTT Compatibility ${release.version} — ${release.title}\n\n${release.date}\n\n${nestHeadings(release.markdown, 2)}\n`;
 }
 
 function formatPrerelease(version, pendingNotes) {
   const { base } = parseVersion(version);
   const notes = pendingNotes ? nestHeadings(pendingNotes, 2) : '- No player-facing changes recorded yet.';
-  return `# Statblock Forge: Fork for Atlas VTT ${version} — Beta build\n\nPre-release build for testing ahead of ${base}. Install it through BRAT; it is not published to the Obsidian community directory.\n\n${notes}\n`;
+  return `# Statblock Forge: Forked Atlas VTT Compatibility ${version} — Beta build\n\nPre-release build for testing ahead of ${base}. Install it through BRAT; it is not published to the Obsidian community directory.\n\n${notes}\n`;
 }
 
 function generateChangelog(root, { check = false } = {}) {

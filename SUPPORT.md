@@ -2,7 +2,7 @@
 
 **Creator and maintainer:** Guilherme Berger Lopes
 
-For issues specific to **Statblock Forge: Fork for Atlas VTT**, request assistance or report a bug at the support repository:
+For issues specific to **Statblock Forge: Forked Atlas VTT Compatibility**, request assistance or report a bug at the support repository:
 
 - Issues and support: https://github.com/guilhermebergerlopes-oss/statblock-forge-for-atlas-vtt/issues
 - Repository: https://github.com/guilhermebergerlopes-oss/statblock-forge-for-atlas-vtt

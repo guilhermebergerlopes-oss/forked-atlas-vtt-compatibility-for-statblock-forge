@@ -1,6 +1,6 @@
 # Privacy and network use
 
-Statblock Forge: Fork for Atlas VTT works offline. Maps, tokens, notes, audio and settings stay in your vault. Automatic release checking is disabled in this fork until its own release manifest and Obsidian listing exist; it does not request or offer upstream Atlas releases as fork updates. The fork connects to the internet when you choose to: to sign in to your Atlas account, to host online play, to share a collection in the Armarium, to submit an issue report, to download the starter ambience or the starter tokens, to show the documentation or the Armarium, to install a collection from the Armarium, or to load an image from a web address.
+Statblock Forge: Forked Atlas VTT Compatibility works offline. Maps, tokens, notes, audio and settings stay in your vault. Automatic release checking is disabled in this fork until its own release manifest and Obsidian listing exist; it does not request or offer upstream Atlas releases as fork updates. The fork connects to the internet when you choose to: to sign in to your Atlas account, to host online play, to share a collection in the Armarium, to submit an issue report, to download the starter ambience or the starter tokens, to show the documentation or the Armarium, to install a collection from the Armarium, or to load an image from a web address.
 
 - No telemetry, no analytics, no ads.
 - You need no account to use Atlas. An Atlas account is optional: only hosting online play and sharing your own collections in the Armarium need one.

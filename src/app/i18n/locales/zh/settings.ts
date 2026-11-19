@@ -32,7 +32,7 @@ export const settings: Translation = {
   'settings.support.joinDiscord': '加入 Discord',
   'settings.support.openGithub': '打开 GitHub',
   'settings.support.reportIssue': '报告问题',
-  'settings.support.reportIssueDesc': '从 Atlas 提交报告，并附上 Atlas 与 Obsidian 的版本。不需要 GitHub 账号。也可使用「报告问题」命令。',
+  'settings.support.reportIssueDesc': "向原始 Atlas VTT 项目提交问题报告，并附上 Atlas 与 Obsidian 的版本。此分支的问题请使用上方的 Statblock Forge 支持链接。无需 GitHub 账号。也可使用「报告问题」命令。",
   'settings.support.suggestFeature': '建议功能',
   'settings.support.suggestFeatureDesc': '告诉我们怎样能让 Atlas 更适合你的桌子。',
   'settings.tutorials.firstTime': '每个教程会在你第一次打开对应功能时显示。',
