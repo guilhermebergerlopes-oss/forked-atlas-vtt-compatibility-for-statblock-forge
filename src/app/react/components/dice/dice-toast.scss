@@ -1,0 +1,322 @@
+// ──────────────────────────────────────────────
+// Dice Toast – BEM: atlas-dice-toast*
+// The result card, on the floating surface the dice panel and the tray share:
+// ringed avatar, ability label, the formula in the tray's face, and a total that
+// "lands" as the reveal sound plays.
+// ──────────────────────────────────────────────
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+
+$toast-avatar: 48px;
+/** Matches REVEAL_DELAY_SECONDS in diceRevealSound.ts so the number lands with the chime. */
+$toast-reveal-delay: 300ms;
+
+// ── Card ─────────────────────────────────────
+
+.atlas-dice-toast {
+  --atlas-dice-accent: var(--interactive-accent);
+  // The crit total's ink: the accent, where it reads as large text (3:1 or more).
+  --atlas-dice-crit-ink: var(--atlas-dice-accent);
+  // Muted text (the dice line, Details): the theme's, one step lighter in dark, where it fell short of APCA Lc 60.
+  --atlas-dice-muted-ink: var(--text-muted);
+  // A die's highest and lowest face, a success and a failure in Details: the theme's green and red,
+  // darkened in light and lightened in dark, to 4.5:1 and APCA Lc 60 or more on their 15 % tint.
+  --atlas-dice-good-ink: color-mix(in srgb, var(--color-green) 70%, white);
+  --atlas-dice-bad-ink: color-mix(in srgb, var(--color-red) 45%, white);
+
+  position: relative;
+  @include atlas-flex-row($spacing-l);
+  align-items: stretch;
+  // The text edge, as on every floating surface: 16 px inside the border, at the top as at the sides.
+  padding: $spacing-l;
+  min-width: 280px;
+  max-width: 360px;
+  @include atlas-elevated-surface;
+  @include atlas-panel-radius($surface-radius);
+  pointer-events: auto;
+
+  &--entering {
+    animation: atlas-dice-toast-enter 220ms $transition-ease-out both;
+  }
+
+  &--exiting {
+    animation: atlas-dice-toast-exit 0.2s $transition-ease-out both;
+  }
+
+  &--crit-success {
+    --atlas-dice-accent: var(--color-yellow);
+  }
+
+  &--crit-fail {
+    --atlas-dice-accent: var(--color-red);
+  }
+
+  // On a light surface the theme's gold falls below 3:1, so the crit ink is darkened towards the text.
+  .theme-light & {
+    --atlas-dice-crit-ink: color-mix(in oklch, var(--atlas-dice-accent) 50%, var(--text-normal));
+    --atlas-dice-good-ink: color-mix(in srgb, var(--color-green) 60%, black);
+    --atlas-dice-bad-ink: color-mix(in srgb, var(--color-red) 70%, black);
+  }
+
+  .theme-dark & {
+    --atlas-dice-muted-ink: color-mix(in oklch, var(--text-muted) 60%, var(--text-normal));
+  }
+}
+
+.atlas-dice-toast__close {
+  @include atlas-close-corner;
+}
+
+// ── Body: main row, details toggle, details ──
+
+.atlas-dice-toast__body {
+  @include atlas-flex-col($spacing-s);
+  flex: 1;
+  min-width: 0;
+}
+
+.atlas-dice-toast__main {
+  position: relative;
+  @include atlas-flex-row($spacing-m);
+}
+
+// Token art uses the shared TokenPortrait, so it keeps the canvas ring and crop.
+.atlas-dice-toast__avatar {
+  width: $toast-avatar;
+  height: $toast-avatar;
+  flex-shrink: 0;
+  animation: atlas-dice-toast-rise 200ms $transition-ease-out 40ms both;
+
+  &--fallback {
+    border-radius: $radius-full;
+    box-shadow:
+      0 0 0 $border-width-m color-mix(in oklch, var(--atlas-dice-accent) 60%, transparent),
+      0 2px 6px color-mix(in oklch, var(--mono-0) 45%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-weight: $font-weight-semibold;
+    font-size: $font-ui-large;
+    user-select: none;
+  }
+}
+
+.atlas-dice-toast__content {
+  @include atlas-flex-col($spacing-xs);
+  flex: 1;
+  min-width: 0;
+  animation: atlas-dice-toast-rise 200ms $transition-ease-out 60ms both;
+}
+
+.atlas-dice-toast__name {
+  font-size: $font-ui-small;
+  font-weight: $font-weight-semibold;
+  color: var(--text-normal);
+  @include atlas-truncate;
+}
+
+// Small-caps label, tinted by the accent so crits read at a glance.
+.atlas-dice-toast__ability {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--atlas-dice-accent) 75%, var(--text-normal));
+  @include atlas-truncate;
+}
+
+// The title: the formula as the tray writes it, and whom the roll was shown to.
+.atlas-dice-toast__title {
+  @include atlas-flex-row($spacing-s);
+  min-width: 0;
+}
+
+.atlas-dice-toast__formula {
+  min-width: 0;
+  // As the tray writes it: the interface font with tabular figures (the dice font's 1 reads as l).
+  font-family: var(--font-interface);
+  font-size: $font-ui-medium;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--text-normal);
+}
+
+// The dice a roll kept and dropped, in the dice panel's breakdown face (not the log's monospace).
+.atlas-dice-toast .atlas-dice-toast__dice {
+  font-family: inherit;
+  font-size: $font-ui-small;
+  color: var(--atlas-dice-muted-ink);
+}
+
+// Hero number: centred on the card's height and left of the close button's column, so the
+// corner control never stands on it however few lines the card has.
+.atlas-dice-toast__result {
+  flex-shrink: 0;
+  min-width: 48px;
+  margin-right: calc(#{$close-button-size} + 2 * #{$close-button-gap} - #{$spacing-l});
+  display: flex;
+
+  // Clear of the close button's 44 px hit area under a coarse pointer too.
+  @media (pointer: coarse) {
+    margin-right: calc(#{$touch-target} + #{$close-button-gap} - #{$spacing-l});
+  }
+
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.atlas-dice-toast__total {
+  display: block;
+  // The dice panel's total: its face and its ink, the accent only for a crit.
+  font-family: $font-dice-display;
+  font-size: 40px;
+  line-height: 1;
+  font-weight: normal;
+  color: var(--text-normal);
+  animation: atlas-dice-toast-land 280ms $transition-ease-out $toast-reveal-delay both;
+}
+
+// Only a crit glows, as only a crit tints the dice panel; a resting halo, nothing animated. Written
+// out: `.parent &` would put the parent before the .atlas-vtt-plugin namespace.
+.atlas-dice-toast--crit-success .atlas-dice-toast__total,
+.atlas-dice-toast--crit-fail .atlas-dice-toast__total {
+  color: var(--atlas-dice-crit-ink);
+  text-shadow: 0 0 12px color-mix(in oklch, var(--atlas-dice-accent) 35%, transparent);
+}
+
+// ── Details ──────────────────────────────────
+
+.atlas-dice-toast__details-toggle {
+  @include atlas-flex-row($spacing-xs);
+  position: relative;
+  align-self: flex-start;
+  // A plain line of text, not Obsidian's button; a larger hit area without growing the layout.
+  height: auto;
+  padding: $spacing-xs 0;
+  margin: -$spacing-xs 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  font: inherit;
+  cursor: pointer;
+  color: var(--atlas-dice-muted-ink);
+  transition: color $transition-fast $transition-ease;
+
+  &:hover,
+  &:active {
+    background: none;
+    color: var(--text-normal);
+  }
+
+  &:focus-visible {
+    box-shadow: none;
+  }
+
+  // A 44 px tall hit area under a coarse pointer, drawn by nothing (it is wider than 44 px already).
+  @media (pointer: coarse) {
+    &::before {
+      position: absolute;
+      inset: calc((100% - #{$touch-target}) / 2) 0;
+      content: '';
+    }
+  }
+}
+
+.atlas-dice-toast__chevron {
+  width: $icon-xs;
+  height: $icon-xs;
+  transition: transform $transition-fast $transition-ease;
+
+  &--open {
+    transform: rotate(180deg);
+  }
+}
+
+.atlas-dice-toast__details-label {
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+}
+
+// ▲ / ▼ after a die that rolled its highest or lowest face: the mark that is not its colour.
+.atlas-dice-toast__die-mark {
+  margin-left: $spacing-xs;
+  // The chip's own size (12 px, on the type scale), on the value's line.
+  font-size: $font-ui-smaller;
+  line-height: 1;
+}
+
+.atlas-dice-toast__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-xs;
+}
+
+.atlas-dice-toast__die-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 $spacing-xs;
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-semibold;
+  font-variant-numeric: tabular-nums;
+  border-radius: $radius-s;
+  background: var(--background-secondary);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--mono-100) 8%, transparent);
+  color: var(--text-normal);
+
+  &--max {
+    background: color-mix(in oklch, var(--color-green) 15%, transparent);
+    color: var(--atlas-dice-good-ink);
+  }
+
+  &--min {
+    background: color-mix(in oklch, var(--color-red) 15%, transparent);
+    color: var(--atlas-dice-bad-ink);
+  }
+
+  &--success {
+    box-shadow: inset 0 0 0 1px var(--color-green);
+    color: var(--atlas-dice-good-ink);
+  }
+
+  &--failure {
+    box-shadow: inset 0 0 0 1px var(--color-red);
+    color: var(--atlas-dice-bad-ink);
+  }
+
+  // A modifier's chip: no die, so no card behind it, only its outline.
+  &--modifier {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+  }
+
+  // Counted for nothing: dropped by keep or drop, or rolled again.
+  &--dropped,
+  &--rerolled {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+    // Its label writes it in brackets (`d20: (4)`); no strike, which across a 1 reads as a 4.
+    color: var(--text-muted);
+  }
+}
+
+// A die a dice set coloured: its colour as a dot before its name, in the card and the log alike.
+.atlas-die-badge--coloured {
+  gap: $spacing-xs;
+
+  &::before {
+    content: '';
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--atlas-die-colour);
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--mono-100) 20%, transparent);
+  }
+}
+
+// Its keyframes and what reduced motion leaves of them.
+@import 'dice-toast-motion';

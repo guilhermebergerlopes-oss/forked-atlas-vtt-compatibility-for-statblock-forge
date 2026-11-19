@@ -1,0 +1,99 @@
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+
+// Floating CMD+hover statblock preview. Shared by the React hover preview
+// (initiative tracker) and the imperative token preview window so the two can
+// never drift apart.
+
+/// Fixed-position box that hugs the statblock card. The padding leaves room for
+/// the card's shadow. JS sets `max-height`, which `atlas-statblock-contained-card`
+/// passes down to the card body.
+@mixin atlas-statblock-preview-surface {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: min($statblock-preview-max-width, calc(100vw - #{$spacing-s}));
+  padding: $spacing-s;
+  overflow: visible;
+  box-sizing: border-box;
+  pointer-events: auto;
+  animation: atlas-statblock-preview-in $transition-normal $transition-ease-out;
+  transform-origin: right center;
+
+  @media (min-width: $statblock-preview-wide-from) {
+    max-width: min($statblock-preview-wide-max-width, calc(100vw - #{$spacing-s}));
+  }
+
+  @include atlas-statblock-contained-card;
+
+  // Floating over the page, the card keeps the elevated shadow its pane and feed cards leave out.
+  .atlas-statblock {
+    box-shadow: $shadow-elevated;
+  }
+}
+
+/// Passes the height limit of a flex column container down to the statblock
+/// card's body, which is the only element that scrolls, so the card keeps its
+/// rounded corners and shadow however tall the statblock. For every place that
+/// shows a statblock in a bounded area: the hover previews, the link dialog.
+@mixin atlas-statblock-contained-card {
+  .atlas-fantasy-statblock,
+  .atlas-statblock {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .atlas-statblock-body {
+    min-height: 0;
+    overflow-y: auto;
+    @include atlas-statblock-scroll-shadows;
+  }
+}
+
+/// Soft shadows at the top/bottom edge while there is more content in that
+/// direction. Pure CSS: the cover gradients scroll with the content and hide
+/// the fixed shadow gradients until the content moves away from an edge.
+@mixin atlas-statblock-scroll-shadows {
+  $shadow: color-mix(in oklch, var(--mono-100) 14%, transparent);
+  $cover: var(--background-primary);
+  $shadow-size: 12px;
+  $cover-size: 24px;
+
+  background:
+    linear-gradient($cover 30%, transparent) top / 100% $cover-size,
+    linear-gradient(transparent, $cover 70%) bottom / 100% $cover-size,
+    radial-gradient(farthest-side at 50% 0, $shadow, transparent) top / 100% $shadow-size,
+    radial-gradient(farthest-side at 50% 100%, $shadow, transparent) bottom / 100% $shadow-size;
+  background-color: $cover;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/// Exit animation; its duration matches the 150ms teardown delay in JS.
+@mixin atlas-statblock-preview-closing {
+  animation: atlas-statblock-preview-out 150ms $transition-ease-out forwards;
+}
+
+@keyframes atlas-statblock-preview-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes atlas-statblock-preview-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(8px) scale(0.98);
+  }
+}

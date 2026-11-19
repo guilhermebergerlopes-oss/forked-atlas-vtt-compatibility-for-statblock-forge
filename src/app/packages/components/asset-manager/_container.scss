@@ -1,0 +1,156 @@
+@use 'sass:math';
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+@use 'variables' as *;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Asset Manager – Shell: overlay, backdrop, window frame and region grid
+// ═══════════════════════════════════════════════════════════════════════════
+// The window is a single elevated surface. The sidebar rail is tinted like an
+// Obsidian side dock; header and content sit flat on the primary background.
+
+.atlas-global-asset-manager-container {
+  position: fixed;
+  inset: 0;
+  z-index: $z-sticky;
+  pointer-events: none;
+
+  .atlas-asset-manager-modal {
+    pointer-events: all;
+    z-index: $z-sticky;
+  }
+}
+
+
+.atlas-asset-manager-modal {
+  position: fixed;
+  inset: 0;
+  z-index: $z-sticky;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto !important;
+  padding: $spacing-2xl;
+
+  @media (max-width: $breakpoint-m) {
+    padding: 0;
+  }
+}
+
+.atlas-asset-manager-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: $scrim;
+  backdrop-filter: blur(6px);
+  z-index: $z-sticky;
+  pointer-events: auto;
+}
+
+// The window as it is placed and animated. It does not clip, so a theme can draw around the
+// window with this element's pseudo-elements (`::before` below the container with a negative
+// `z-index`, `::after` above it) and have that move and fade with the window.
+// Its height stops where its widest shape would turn less wide than $window-aspect: on a large
+// screen at a low or fractional scale (a 4K screen at 1.5, 1440p at 1) the window would
+// otherwise reach its width first and grow tall, nearly square.
+$window-max-width: 1440px;
+$window-aspect: 1.4;
+
+.atlas-asset-manager-window {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: $window-max-width;
+  max-height: min(100%, #{math.div($window-max-width, $window-aspect)});
+  margin: auto;
+  z-index: $z-sticky + 1;
+  pointer-events: auto;
+
+  @media (max-width: $breakpoint-m) {
+    max-height: 100%;
+  }
+}
+
+.atlas-asset-manager-container {
+  position: relative;
+  // One layer: the header's and sidebar's z-index stay inside it, so a theme's `::after` on the
+  // window lies above all of it, not only above the body.
+  isolation: isolate;
+  display: grid;
+  // minmax(0, …) keeps the header's min-content width from widening the
+  // column past the window, which would clip the header and the grid.
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  --atlas-am-window-radius: #{$surface-radius};
+  @include atlas-elevated-surface;
+  border-radius: $window-radius;
+  overflow: hidden;
+  pointer-events: auto !important;
+  font-size: $font-ui-small;
+  color: var(--text-normal);
+
+  .atlas-asset-manager-sidebar {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  .atlas-asset-manager-header {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .atlas-asset-manager-body {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 0;
+  }
+
+  // The floating sidebar lies over the content, which takes the whole width.
+  &.atlas-sidebar-floating {
+    grid-template-columns: minmax(0, 1fr);
+
+    .atlas-asset-manager-header,
+    .atlas-asset-manager-body {
+      grid-column: 1;
+    }
+  }
+
+  @media (max-width: $breakpoint-m) {
+    --atlas-am-window-radius: 0px;
+  }
+
+  * {
+  }
+}
+
+// ── Shared control sizing ───────────────────────────────────────────────────
+// Every toolbar control (icon buttons, search, sort) shares one height so the
+// header reads as a single line.
+
+.atlas-am-icon-btn {
+  @include atlas-control-icon-button;
+}
+
+// ── Reduced motion ──────────────────────────────────────────────────────────
+// Keep opacity and colour transitions; remove movement.
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-asset-manager-container {
+    .atlas-am-icon-btn,
+    .atlas-asset-manager-create-btn,
+    .atlas-tab-button,
+    .atlas-folder-grid-item,
+    .atlas-tag-button,
+    .atlas-asset-card-thumb,
+    .atlas-asset-card-thumb img,
+    .atlas-asset-card-thumb .atlas-token-image-wrapper,
+    .atlas-am-menu,
+    .atlas-asset-manager-search,
+    .atlas-collection-dropdown-content,
+    .atlas-selection-info {
+      transition-property: opacity, background-color, color, border-color, box-shadow;
+      transform: none !important;
+    }
+  }
+}

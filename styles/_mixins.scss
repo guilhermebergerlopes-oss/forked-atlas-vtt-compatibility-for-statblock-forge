@@ -1,0 +1,1010 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// Atlas VTT Shared Mixins
+// ═══════════════════════════════════════════════════════════════════════════
+// Reusable style patterns built on design tokens.
+// Import _tokens.scss before this file.
+
+@use 'tokens' as *;
+
+// ── Surfaces ─────────────────────────────────────────────────────────────────
+
+/// Elevated card surface — opaque background, visible stroke, drop shadow.
+/// Use for modals, popovers, hover previews, and floating panels.
+/// @param {String} $variant - `editing` marks a surface being arranged (the
+///   toolbar while its editor is open) with an accent stroke. Include it in the
+///   state's own rule, on top of the plain surface: it sets the stroke alone.
+@mixin atlas-elevated-surface($variant: plain) {
+  @if $variant == editing {
+    border-color: color-mix(in oklch, var(--interactive-accent) 50%, transparent);
+  } @else {
+    background: var(--background-primary);
+    border: $border-width-m solid color-mix(in oklch, var(--mono-100) $border-opacity-default, transparent);
+    border-radius: $surface-radius;
+    box-shadow: $shadow-elevated;
+  }
+}
+
+/// Atlas' filled button: the theme's accent, darkened until its text reads at 4.5:1
+/// or more on Obsidian's accents in both themes (white on the default purple: 3.9:1
+/// plain, 5.5:1 here). Only Atlas' own buttons take it; Obsidian's variables stay.
+@mixin atlas-accent-fill {
+  background: color-mix(in oklch, var(--interactive-accent) 82%, black);
+  color: var(--text-on-accent);
+
+  &:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--interactive-accent) 88%, black);
+  }
+}
+
+/// Atlas' destructive button (Delete, Clear in a confirmation): the theme's error red, darkened until
+/// white reads at 4.5:1 or more on it in both themes (Obsidian's default reds: 3.6:1 dark and 4.4:1
+/// light plain, 5.3:1 and 6.3:1 here). Only Atlas' own buttons take it.
+@mixin atlas-danger-fill {
+  background: color-mix(in srgb, var(--background-modifier-error) 80%, black);
+  color: white;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--background-modifier-error) 86%, black);
+  }
+}
+
+/// Marks a token with a linked statblock: a small round badge on its art,
+/// holding the ScrollText icon.
+@mixin atlas-statblock-badge($size: $icon-m) {
+  display: grid;
+  place-items: center;
+  width: $size;
+  height: $size;
+  border-radius: $radius-full;
+  background: var(--background-primary);
+  box-shadow: 0 0 0 $border-width-s var(--background-modifier-border);
+  color: var(--text-muted);
+
+  svg {
+    width: $icon-xs;
+    height: $icon-xs;
+  }
+}
+
+/// Subtle container surface — for nested sections within elevated surfaces.
+/// Use for grouped content areas, toolbars within modals, etc.
+@mixin atlas-inset-surface {
+  background: var(--background-secondary);
+  border: $border-width-s solid var(--background-modifier-border);
+  border-radius: $radius-m;
+}
+
+/// Interactive surface that responds to hover/focus.
+/// Use for cards, list items, and clickable containers.
+@mixin atlas-interactive-surface {
+  background: var(--background-secondary);
+  border-radius: $radius-m;
+
+  &:hover {
+    background: var(--background-modifier-hover);
+  }
+
+  &:active {
+    background: var(--background-modifier-active-hover);
+  }
+}
+
+/// Concentric corner for an element sitting in the corner of a rounded
+/// container. Both curves share one centre when inner = outer − inset, where
+/// inset is the distance from the container's outer edge to the element
+/// (frame border + padding). Falls back to $min when the container is square
+/// or the inset exceeds the outer radius.
+/// @param {String} $corner - top-left | top-right | bottom-left | bottom-right
+/// @param {Length} $outer  - container radius (may be a CSS custom property)
+/// @param {Length} $inset  - distance from the container edge to the element
+/// @param {Length} $min    - the element's own radius, used as the floor
+@mixin atlas-concentric-corner($corner, $outer, $inset, $min: $radius-m) {
+  border-#{$corner}-radius: max(#{$min}, calc(#{$outer} - #{$inset}));
+}
+
+// ── Buttons ──────────────────────────────────────────────────────────────────
+
+/// Icon button base styles — square button with centered icon.
+/// @param {String} $size - 's', 'm', or 'l'
+@mixin atlas-icon-button($size: 'm') {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  // Obsidian pads every <button>: inside a button of fixed size that padding squeezed the icon
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  transition: transform $transition-press $transition-ease-out;
+
+  @if $size == 's' {
+    width: $button-height-s;
+    height: $button-height-s;
+    border-radius: $radius-m;
+
+    svg {
+      width: $icon-s;
+      height: $icon-s;
+    }
+  } @else if $size == 'l' {
+    width: $button-height-l;
+    height: $button-height-l;
+    border-radius: $radius-m;
+
+    svg {
+      width: $icon-l;
+      height: $icon-l;
+    }
+  } @else {
+    // Default: medium
+    width: $button-height-m;
+    height: $button-height-m;
+    border-radius: $radius-m;
+
+    svg {
+      width: $icon-m;
+      height: $icon-m;
+    }
+  }
+}
+
+/// Toolbar icon button at the standard control height (Obsidian's input
+/// height). Used for close buttons and toolbar actions so every icon control
+/// in the plugin shares one size, hit area and press feedback.
+@mixin atlas-control-icon-button {
+  &.btn,
+  &.btn--icon {
+    width: var(--input-height);
+    height: var(--input-height);
+    padding: 0;
+    border-radius: $radius-m;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  svg {
+    width: $icon-s;
+    height: $icon-s;
+  }
+
+  transition: transform $transition-press $transition-ease-out;
+
+  &:hover:not(:disabled) {
+    color: var(--text-normal);
+  }
+
+  &:active:not(:disabled) {
+    background: var(--background-modifier-active-hover);
+    transform: scale(0.95);
+  }
+
+  &.atlas-active {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+}
+
+/// Ghost button — transparent background, visible on hover.
+@mixin atlas-ghost-button {
+  background: transparent;
+  color: var(--text-muted);
+
+  &:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+
+  &:active {
+    background: var(--background-modifier-active-hover);
+  }
+}
+
+/// Text input at Obsidian's control height. Use for every single-line input.
+@mixin atlas-text-input {
+  width: 100%;
+  height: var(--input-height);
+  padding: 0 $spacing-s;
+  background: var(--background-modifier-form-field);
+  border: $border-width-s solid $field-edge;
+  border-radius: $radius-m;
+  color: var(--text-normal);
+  font-size: $font-ui-small;
+  font-family: var(--font-interface);
+  outline: none;
+  box-shadow: none;
+  transition: border-color $transition-fast $transition-ease, box-shadow $transition-fast $transition-ease;
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+
+  &:hover:not(:focus) {
+    border-color: $field-edge-hover;
+  }
+
+  @include atlas-input-focus;
+}
+
+/// Text box of several lines: the text input's frame and states, its height set by its rows.
+@mixin atlas-text-area {
+  @include atlas-text-input;
+  height: auto;
+  min-height: var(--input-height);
+  padding: $spacing-s;
+  line-height: var(--line-height-normal);
+  resize: vertical;
+}
+
+/// Search field without a frame, for a search row that sits flush in a menu or
+/// pane. Obsidian frames text inputs in every state, so each state is reset.
+@mixin atlas-flush-input {
+  &,
+  &:hover,
+  &:focus,
+  &:focus-visible,
+  &:active {
+    flex: 1;
+    min-width: 0;
+    height: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    color: var(--text-normal);
+    font-size: $font-ui-small;
+  }
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+}
+
+/// Shared footer button shape (Obsidian control height).
+@mixin atlas-modal-button-base {
+  @include atlas-flex-row($gap: $spacing-xs);
+  justify-content: center;
+  height: var(--input-height);
+  padding: 0 $spacing-m;
+  border-radius: $radius-m;
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color $transition-fast $transition-ease,
+              color $transition-fast $transition-ease,
+              border-color $transition-fast $transition-ease,
+              transform $transition-press $transition-ease-out;
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  svg {
+    width: $icon-s;
+    height: $icon-s;
+  }
+}
+
+/// Cancel / secondary action button.
+@mixin atlas-cancel-btn {
+  @include atlas-modal-button-base;
+  background-color: var(--interactive-normal);
+  border: $border-width-s solid var(--background-modifier-border);
+  color: var(--text-normal);
+
+  &:hover:not(:disabled) {
+    background-color: var(--interactive-hover);
+    border-color: var(--background-modifier-border-hover);
+  }
+}
+
+/// Confirm / primary action button — accent background.
+@mixin atlas-confirm-btn {
+  @include atlas-modal-button-base;
+  background-color: var(--interactive-accent);
+  border: none;
+  color: var(--text-on-accent);
+
+  &:hover:not(:disabled) {
+    background-color: var(--interactive-accent-hover);
+  }
+}
+
+// ── Select ───────────────────────────────────────────────────────────────────
+// One look for every custom select: the closed trigger, the floating listbox
+// and its options. Shared by the Select primitive and the collection pickers.
+
+/// Closed select control. `!important` outranks Obsidian's button styling.
+/// @param {Length} $height - control height
+@mixin atlas-select-trigger($height: var(--input-height)) {
+  appearance: none;
+  outline: none;
+  box-shadow: none !important;
+  width: 100%;
+  height: $height;
+  padding: 0 $spacing-s;
+  @include atlas-flex-row($gap: $spacing-s);
+  justify-content: space-between;
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  border-radius: $radius-m;
+  background-color: var(--background-modifier-form-field) !important;
+  color: var(--text-normal);
+  border: $border-width-s solid var(--background-modifier-border) !important;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    border-color: var(--background-modifier-border-hover) !important;
+  }
+
+  &.atlas-open {
+    border-color: var(--background-modifier-border-focus) !important;
+  }
+}
+
+/// Floating listbox below a select trigger, entering with a short scale-in.
+@mixin atlas-select-popover {
+  position: absolute;
+  top: calc(100% + #{$spacing-xs});
+  left: 0;
+  right: 0;
+  z-index: $z-popover;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--menu-background);
+  border: var(--menu-border-width, #{$border-width-s}) solid var(--menu-border-color);
+  border-radius: $surface-radius;
+  box-shadow: var(--menu-shadow, #{$shadow-md});
+
+  transform-origin: top left;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 150ms $transition-ease-out, transform 150ms $transition-ease-out;
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/// One row inside a select listbox.
+/// @param {Length} $height - row height
+@mixin atlas-select-option($height: var(--input-height)) {
+  appearance: none;
+  width: 100%;
+  height: $height;
+  padding: 0 $spacing-s;
+  margin: 0;
+  @include atlas-flex-row($gap: $spacing-s);
+  justify-content: space-between;
+  font-size: $font-ui-small;
+  background-color: transparent !important;
+  color: var(--text-normal);
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: $radius-m;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover,
+  &:focus-visible {
+    background-color: var(--background-modifier-hover) !important;
+  }
+
+  &:active {
+    background-color: var(--background-modifier-active-hover) !important;
+  }
+}
+
+// ── Layout ───────────────────────────────────────────────────────────────────
+
+/// Flex row with standard gap.
+/// @param {String} $gap - Spacing token name or custom value
+@mixin atlas-flex-row($gap: $spacing-s) {
+  display: flex;
+  align-items: center;
+  gap: $gap;
+}
+
+/// Flex column with standard gap.
+/// @param {String} $gap - Spacing token name or custom value
+@mixin atlas-flex-col($gap: $spacing-s) {
+  display: flex;
+  flex-direction: column;
+  gap: $gap;
+}
+
+/// Standard padding for modal/panel content.
+@mixin atlas-panel-padding {
+  padding: $spacing-m;
+}
+
+// ── Focus States ─────────────────────────────────────────────────────────────
+
+/// Accessible focus ring for interactive elements.
+@mixin atlas-focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+  }
+}
+
+/// Marks the chosen colour swatch with a tick on a neutral badge, so it reads on any
+/// swatch colour and does not depend on telling colours apart.
+@mixin atlas-swatch-check($size: 16px) {
+  width: $size;
+  height: $size;
+  padding: 3px;
+  border-radius: $radius-full;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: $shadow-sm;
+}
+
+/// A native colour input shown as its bare swatch, `$size` square.
+@mixin atlas-colour-input($size) {
+  width: $size;
+  height: $size;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+/// Input accent focus state — accent border with soft glow.
+/// Use on text inputs and selects when focused.
+@mixin atlas-input-focus {
+  &:focus {
+    outline: none;
+    // The accent, softened, with a faint ring: the field in use is told at once, without a stark line.
+    border-color: $field-edge-focus;
+    box-shadow: $field-focus-ring;
+  }
+}
+
+// ── Modals ──────────────────────────────────────────────────────────────────
+
+/// Full-screen modal overlay with blurred backdrop.
+/// @param {Number} $z - z-index layer for the overlay
+@mixin atlas-modal-overlay($z: $z-atlas-dropdown) {
+  position: fixed;
+  inset: 0;
+  z-index: $z;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-2xl;
+  background-color: $scrim;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+
+  // A window as narrow as a phone's (or 400 % zoom, WCAG 1.4.10) gives the dialog its room, not the margin.
+  @media (max-width: 480px) {
+    padding: $spacing-s;
+  }
+}
+
+// ── Panel close button ──────────────────────────────────────────────────────
+// Every panel closes with the same "×": the same size, $close-button-gap from
+// the panel's border above and beside it, and a corner concentric with the
+// panel's own (outer radius = inner radius + gap). Every floating surface has
+// $surface-radius (see the corner tokens), so every control in a corner is alike.
+
+/// Radius of a panel that holds a close button. Also publishes the radius
+/// inside its border, which the close button's corner runs concentric with.
+/// @param {Length} $radius       - the panel's outer radius
+/// @param {Length} $border-width - the panel's border width
+@mixin atlas-panel-radius($radius, $border-width: $border-width-m) {
+  --atlas-panel-inner-radius: calc(#{$radius} - #{$border-width});
+  border-radius: $radius;
+}
+
+/// Radius of an element $inset inside the border of a panel set up with
+/// `atlas-panel-radius`: concentric with the panel's corner (outer radius =
+/// inner radius + inset). A control at $surface-inset comes out at the control
+/// radius; content deeper inside keeps it too, since the curve left there would
+/// be smaller than the element's other corners.
+/// @param {Length} $inset - distance from the panel's border to the element
+/// @param {Length} $max   - half the element's height, so a small element never
+///                          rounds past a capsule
+@function atlas-panel-inset-radius-value($inset, $max: null) {
+  $radius: calc(var(--atlas-panel-inner-radius, #{$surface-radius}) - #{$inset});
+  @if $max {
+    @return clamp(0px, #{$radius}, #{$max});
+  }
+  @return max(#{$radius-m}, #{$radius});
+}
+
+/// Rounds an element concentric with the corner of the panel it sits in (see
+/// `atlas-panel-inset-radius-value`). Pass corners to round only the ones that
+/// face the panel's corners; the others keep the element's own radius, so its
+/// edges run parallel to the panel's.
+/// @param {Length} $inset   - distance from the panel's border to the element
+/// @param {List}   $corners - top-left | top-right | bottom-left | bottom-right
+@mixin atlas-panel-inset-radius($inset, $corners...) {
+  $radius: atlas-panel-inset-radius-value($inset);
+
+  @if length($corners) == 0 {
+    border-radius: $radius;
+  } @else {
+    @each $corner in $corners {
+      border-#{$corner}-radius: $radius;
+    }
+  }
+}
+
+/// A popover positioned by `useKeepInView`: shifted sideways off the view's
+/// edge, and scrolling when the view is too short for it. Without the hook's
+/// variables it stays put (no `translate`, so no new containing block).
+@mixin atlas-keep-in-view {
+  translate: var(--atlas-keep-in-view-x);
+
+  &.atlas-keep-in-view--capped {
+    box-sizing: border-box;
+    max-height: var(--atlas-keep-in-view-max-height);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    > * {
+      flex-shrink: 0;
+    }
+  }
+}
+
+/// The close button itself, for CloseButton and Obsidian's native modal control.
+@mixin atlas-close-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // Stays in the header's corner when a taller title grows the header.
+  align-self: flex-start;
+  flex-shrink: 0;
+  width: $close-button-size;
+  height: $close-button-size;
+  padding: 0;
+  border: none;
+  // Only the corner facing the panel's follows its curve. The others keep the
+  // control radius, so the button's top and right edges run parallel to the
+  // panel's at $close-button-gap all the way along.
+  border-radius: $radius-m;
+  @include atlas-panel-inset-radius($close-button-gap, top-right);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: transform $transition-press $transition-ease-out;
+
+  svg {
+    width: $icon-s;
+    height: $icon-s;
+    stroke-width: 2;
+  }
+
+  &:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+
+  &:active {
+    background: var(--background-modifier-active-hover);
+    transform: scale(0.95);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+  }
+}
+
+/// Resize handles of a floating window moved with `usePanelResize`: put on the
+/// handle's base class, with `--right`, `--bottom` and `--corner` modifiers. The
+/// corner carries a grip mark along the window's own corner.
+/// @param {Length} $hit - thickness of the edge handles
+@mixin atlas-floating-resize-handle($hit: 8px) {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+
+  &--right {
+    top: $surface-radius;
+    right: 0;
+    bottom: $surface-radius;
+    width: $hit;
+    cursor: ew-resize;
+  }
+
+  &--bottom {
+    right: $surface-radius;
+    bottom: 0;
+    left: $surface-radius;
+    height: $hit;
+    cursor: ns-resize;
+  }
+
+  &--corner {
+    right: 0;
+    bottom: 0;
+    width: $surface-radius;
+    height: $surface-radius;
+    cursor: nwse-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      right: $surface-inset;
+      bottom: $surface-inset;
+      width: 14px;
+      height: 14px;
+      border-right: $border-width-l solid var(--text-faint);
+      border-bottom: $border-width-l solid var(--text-faint);
+      border-bottom-right-radius: atlas-panel-inset-radius-value($surface-inset);
+      opacity: 0.45;
+      transition: opacity $transition-fast $transition-ease;
+    }
+
+    &:hover::after {
+      opacity: 1;
+    }
+  }
+}
+
+/// Header along the top edge of a panel, ending in the close button: the
+/// button sits $close-button-gap from the panel's border, and the rest of the
+/// header centres on it.
+/// @param {Length} $inline-start - space before the title
+@mixin atlas-close-header($inline-start: $spacing-l) {
+  min-height: calc(#{$close-button-size} + 2 * #{$close-button-gap});
+  padding: $close-button-gap $close-button-gap $close-button-gap $inline-start;
+  align-items: center;
+}
+
+/// Close button floating in the top-right corner of a panel without a header row.
+@mixin atlas-close-corner {
+  position: absolute;
+  top: $close-button-gap;
+  right: $close-button-gap;
+  z-index: 1;
+}
+
+/// A key as a keyboard prints it: one cap per key, for the cheat sheet and the tours' steps.
+@mixin atlas-keycap($size: 22px) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: $size;
+  height: $size;
+  padding: 0 $spacing-xs + 2px;
+  border: $border-width-s solid $field-edge;
+  border-radius: $radius-s;
+  background: color-mix(in oklch, var(--mono-100) 4%, var(--background-primary));
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--mono-100) $border-opacity-subtle, transparent);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-medium;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/// Modal window: elevated surface at the surface radius, column layout,
+/// never taller than the viewport. Put header / body / footer inside.
+@mixin atlas-modal-window {
+  @include atlas-elevated-surface;
+  @include atlas-panel-radius($surface-radius);
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: $font-ui-small;
+}
+
+/// Standard modal header — title left, close button right. No divider line: its padding sets it apart from the
+/// body, and a body that scrolls casts the scroll shadow (`atlas-scroll-shadow`).
+@mixin atlas-modal-header {
+  @include atlas-flex-row($gap: $spacing-m);
+  @include atlas-close-header;
+  justify-content: space-between;
+  flex-shrink: 0;
+
+  h2,
+  h3 {
+    @include atlas-flex-row($gap: $spacing-s);
+    margin: 0;
+    font-size: $font-ui-large;
+    font-weight: $font-weight-semibold;
+    color: var(--text-normal);
+    line-height: var(--line-height-tight);
+    min-width: 0;
+
+    svg {
+      width: $icon-m;
+      height: $icon-m;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+  }
+}
+
+/// Modal body — uniform padding, stacked sections; content scrolled past its edges lies under the scroll shadow.
+@mixin atlas-modal-body {
+  @include atlas-flex-col($gap: $spacing-l);
+  padding: $spacing-l;
+  overflow-y: auto;
+  min-height: 0;
+  @include atlas-scroll-shadow;
+}
+
+/// Standard modal footer — right-aligned actions. No divider line: its padding sets it apart from the body. Its
+/// buttons stand $spacing-l inside the window, too deep to follow its corner, and keep the control radius.
+@mixin atlas-modal-footer {
+  @include atlas-flex-row($gap: $spacing-s);
+  justify-content: flex-end;
+  padding: $spacing-l;
+  flex-shrink: 0;
+}
+
+/// Obsidian's own `Modal` (padded by $spacing-l): its native close control
+/// looks and sits like CloseButton, and the title centres on it.
+@mixin atlas-native-modal-close-control {
+  --atlas-panel-inner-radius: calc(var(--modal-radius) - var(--modal-border-width, 1px));
+
+  > :is(.modal-close-button, .modal-header-button) {
+    @include atlas-close-button;
+    @include atlas-close-corner;
+  }
+
+  > .modal-header {
+    display: flex;
+    align-items: center;
+    min-height: $close-button-size;
+    margin-top: calc(#{$close-button-gap} - #{$spacing-l});
+    // Keeps long titles clear of the close button.
+    padding-inline-end: calc(#{$close-button-size} + #{$close-button-gap} + #{$spacing-s} - #{$spacing-l});
+
+    > .modal-title {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+  }
+}
+
+/// Field label above an input.
+@mixin atlas-field-label {
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  color: var(--text-normal);
+}
+
+/// The label of a section of rows or items (a sidebar group, a list's heading): smaller and heavier than the items it
+/// heads, so it is told from them by more than colour.
+@mixin atlas-section-label {
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-semibold;
+  color: var(--text-muted);
+}
+
+/// Secondary explanatory text.
+@mixin atlas-help-text {
+  font-size: $font-ui-small;
+  color: var(--text-muted);
+  line-height: var(--line-height-normal);
+}
+
+/// Accent-coloured text at WCAG AA (4.5:1) in both themes, without touching Obsidian's variables: the light accent reads
+/// 3.2–4.3:1 on white and on its own tint, so light takes it darker. Dark takes it lighter, to APCA Lc 60 on the
+/// panels, on a hovered row and on an accent tint (64 there; at 85 % the accent gave 51–55). Icons, borders and fills
+/// keep the accent itself (3:1 is theirs).
+@mixin atlas-accent-text {
+  color: color-mix(in srgb, var(--text-accent) 60%, white);
+
+  // On the element itself: rules nested in `.atlas-vtt-plugin` cannot put a `.theme-light` above it.
+  &:is(.theme-light *) {
+    color: color-mix(in srgb, var(--text-accent) 76%, black);
+  }
+}
+
+/// Error-coloured text (a message, an excluded filter, a destructive action) at WCAG AA in both themes: Obsidian's red
+/// reads 4.2:1 on white and 3.4–4.3:1 on its own tint, so light takes it darker. Dark takes it lighter, to APCA Lc 60 on
+/// the panels, a hovered row and a red tint (at 80 % Obsidian's red gave 43–47).
+@mixin atlas-error-text {
+  color: color-mix(in srgb, var(--text-error) 50%, white);
+
+  &:is(.theme-light *) {
+    color: color-mix(in srgb, var(--text-error) 72%, black);
+  }
+}
+
+// ── Checkbox hit area ───────────────────────────────────────────────────────
+
+/// Under a coarse pointer the native checkboxes inside take a 44 px hit area (WCAG 2.5.5): a `::before` around Obsidian's
+/// box, which keeps its size, colours and place (its tick is the `::after`), so the row's layout does not change.
+@mixin atlas-coarse-checkbox-hit {
+  @media (pointer: coarse) {
+    input[type='checkbox']::before {
+      position: absolute;
+      // From the padding box, which `100%` measures too: the area reaches 44 px from the border box's edges.
+      inset: calc((100% - #{$touch-target}) / 2);
+      content: '';
+    }
+  }
+}
+
+// ── Tab Switcher ────────────────────────────────────────────────────────────
+
+/// Segmented-control container for tab buttons (matches the asset manager header). Its tabs sit $surface-inset inside
+/// the track and apart, concentric with its corner (`atlas-tab-button`).
+@mixin atlas-tab-switcher {
+  @include atlas-flex-row($gap: $surface-inset);
+  padding: $surface-inset;
+  background-color: var(--background-secondary);
+  border-radius: $radius-m;
+}
+
+/// Individual tab button inside a tab-switcher.
+@mixin atlas-tab-button {
+  appearance: none;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none;
+  background: transparent !important;
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  // Never under the 24 px WCAG 2.2 asks of a target (2.5.8): at Obsidian's 30 px control height the track grows to 32.
+  height: max(#{$button-height-s}, calc(var(--input-height) - 2 * #{$surface-inset}));
+  padding: 0 $spacing-m;
+  border-radius: $control-inset-radius;
+  color: var(--text-muted);
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  transition: color $transition-fast $transition-ease,
+              background-color $transition-fast $transition-ease,
+              transform $transition-press $transition-ease-out;
+
+  svg {
+    width: $icon-xs;
+    height: $icon-xs;
+  }
+
+  &:hover {
+    color: var(--text-normal);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.atlas-active {
+    background: var(--background-primary) !important;
+    color: var(--text-normal);
+    box-shadow: $shadow-sm !important;
+  }
+
+  .atlas-tab-count {
+    font-size: $font-ui-smaller;
+    font-weight: $font-weight-normal;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// ── Scrollbars ───────────────────────────────────────────────────────────────
+
+/// A scroll area that scrolls with no scrollbar at all, not even Atlas' overlay one (`_overlay-scrollbars.scss`): a
+/// strip of tabs or cards whose edges fade or whose shadows reach past its box, where a thumb would stand apart.
+@mixin atlas-scrollbar-none {
+  --atlas-scrollbar: none;
+}
+
+/// Scroll shadow of a scroll area, where a divider line used to set it apart from a header or footer: a narrow dark
+/// shadow lies over the content at the top edge while the area is scrolled away from its top, and at the bottom edge
+/// while more lies below; at rest, and in an area that does not scroll, there is none. Always dark, in both themes
+/// (`--atlas-scroll-shadow`, set per theme in `main.scss`), never a light or background-coloured gradient.
+/// No script: the area is a scroll-state container its own pseudo-elements query (it follows the area's overflow
+/// as it changes, where a scroll-driven animation held its last value once the area stopped scrolling), and they are
+/// anchored to the area's edges (their implicit anchor, the area itself: the area's own anchor name belongs to its
+/// overlay scrollbar), so they neither scroll with the content
+/// nor take part in its flex or grid layout. The area isolates its stacking, so the shadow lies over every layer of
+/// its content (a card's badges) and under whatever lies over the area itself (a floating sidebar).
+/// @param {String} $layer - `absolute` for an area that is not positioned itself: the shadow is clipped by the
+///   dialog around it. An area that is positioned (the containing block of virtual lists) takes `fixed`, since an
+///   element can not be anchored to its own containing block.
+@mixin atlas-scroll-shadow($layer: absolute) {
+  container: atlas-scroll-shadow / scroll-state;
+  isolation: isolate;
+
+  &::before,
+  &::after {
+    content: '';
+    position: $layer;
+    position-anchor: auto;
+    left: anchor(left);
+    right: anchor(right);
+    z-index: $z-sticky;
+    height: $spacing-s;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity $transition-fast;
+  }
+
+  &::before {
+    top: anchor(top);
+    background: linear-gradient(to bottom, var(--atlas-scroll-shadow), transparent);
+  }
+
+  &::after {
+    bottom: anchor(bottom);
+    background: linear-gradient(to top, var(--atlas-scroll-shadow), transparent);
+  }
+
+  @container atlas-scroll-shadow scroll-state(scrollable: top) {
+    &::before {
+      opacity: 1;
+    }
+  }
+
+  @container atlas-scroll-shadow scroll-state(scrollable: bottom) {
+    &::after {
+      opacity: 1;
+    }
+  }
+}
+
+// ── Text ─────────────────────────────────────────────────────────────────────
+
+/// Truncate text with ellipsis.
+@mixin atlas-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/// Multi-line text truncation.
+/// @param {Number} $lines - Number of lines before truncation
+@mixin atlas-line-clamp($lines: 2) {
+  display: -webkit-box;
+  -webkit-line-clamp: $lines;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+// ── Accessibility ────────────────────────────────────────────────────────────
+
+/// Keeps content available to assistive technology while removing it visually.
+@mixin atlas-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+// What a page that fills its view keeps from the edges (`$dm-screen-inset`), on the 4 px scale where the browser can
+// round it (`round()`, Chromium 125); older ones keep the unrounded share of the width.
+@mixin atlas-dm-screen-inset {
+  --atlas-dm-screen-inset: #{$dm-screen-inset};
+
+  @supports (width: round(nearest, 1px, 4px)) {
+    --atlas-dm-screen-inset: clamp(#{$spacing-l}, round(nearest, 3cqi, 4px), 64px);
+  }
+}

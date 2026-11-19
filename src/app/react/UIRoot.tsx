@@ -1,0 +1,318 @@
+import React, { useMemo, useState, useEffect } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { LightPopoverHost } from '../pixi/lighting/LightPopover';
+import { LightZonePopoverHost } from '../pixi/lighting/LightZonePopover';
+import { SelectionBarHost } from '../packages/components/toolbar/SelectionBar';
+import { LevelSurfacePopoverHost } from '../pixi/levelSurfaces/LevelSurfacePopover';
+import { MeasurePopoverHost } from './components/measure/MeasurePopover';
+import { App } from 'obsidian';
+import { Application } from 'pixi.js';
+import { MainToolbar } from '../packages/components/MainToolbar';
+import { PlayerWindowBar } from '../packages/components/player-window-bar/PlayerWindowBar';
+import { GlassChip } from '../packages/components/true-scale/GlassChip';
+import { GridSettingsModal } from './components/GridSettingsModalSimple';
+import { GridAlignmentOverlay } from './components/GridAlignmentOverlay';
+import { ResponsiveWidgetBar } from './components/ResponsiveWidgetBar';
+import { useViewStoreHook, useAtlasStore } from './ViewStoreContext';
+import { ViewActionsMenu } from './components/ViewActionsMenu';
+import { HotkeyHelpButton } from './components/HotkeyHelpButton';
+import { UndoRedoControls } from './components/UndoRedoControls';
+import { OnlinePlayRoom, OnlinePlaySlot } from './components/OnlinePlaySlot';
+import { BottomToolbarRow } from './components/BottomToolbarRow';
+import { DrawToolBar } from '../packages/components/toolbar/DrawToolBar';
+import { LightingToolBar } from '../packages/components/toolbar/LightingToolBar';
+import { MeasureToolBar } from '../packages/components/toolbar/MeasureToolBar';
+import { FogToolBar } from '../packages/components/toolbar/FogToolBar';
+import { DMScreenFromStore } from './components/DMScreen';
+import { DungeonGeneratorOverlay } from '../packages/components/dungeon-generator/DungeonGeneratorOverlay';
+import { InitiativeTracker } from './components/InitiativeTracker';
+import { DiceRollLog } from './components/dice-log/DiceRollLog';
+import { DiceRollDisplay } from './components/dice/DiceRollDisplay';
+import { TurnAnnouncer } from './components/TurnAnnouncer';
+import { RandomTables } from './components/randomTables/RandomTablesPanel';
+import { DocsWindow } from './components/documentation/DocsPanel';
+import { MapLoadingOverlay } from './components/MapLoadingOverlay';
+import { SceneTabBar } from './components/SceneTabBar';
+import { LevelSwitcher } from './components/levels/LevelSwitcher';
+import { LevelLinkPopoverHost } from './components/levels/LevelLinkPopover';
+import { SceneSwitcher } from './components/scene-switcher/SceneSwitcher';
+import { presentTab as presentSceneTab } from '../services/PlayerWindowPresenter';
+import { usePresentedScene } from './hooks/usePresentedScene';
+import { PlacementHint } from './components/PlacementHint';
+import { canRunMapHotkeys, matchesMapHotkey } from '../keyboard/mapHotkeys';
+import { SettingsService } from '../services/SettingsService';
+import { HotkeyHelp } from '../keyboard/HotkeyHelp';
+import { MapTours } from '../onboarding/MapTours';
+import { defeatedOnMap } from '../initiative/defeatedOnMap';
+
+
+// Import the new context and hook
+import { AtlasUIContext, AtlasUIContextValue } from './root/AtlasUIContext';
+import { ContextMenuProvider } from './root/ContextMenuContext';
+import { SoundDirector } from '../soundDirector/SoundDirector';
+import { PanelBoundary } from './root/PanelBoundary';
+import { useMapNavigationHotkeys } from './useMapNavigationHotkeys';
+import type { AtlasView } from '../atlas-view';
+import { runInBackground } from '../utils/backgroundTask';
+
+interface UIRootProps {
+  app: App;
+  view: AtlasView;
+  pixiApp: Application | null;
+}
+
+/**
+ * Root component for the Atlas VTT UI
+ * Provides a context with core objects to all child components
+ */
+export const UIRoot: React.FC<UIRootProps> = ({ app, view, pixiApp }) => {
+  const settings = SettingsService.forApp(app);
+  const [isSceneSwitcherOpen, setSceneSwitcherOpen] = useState(false);
+
+  // Get the store directly from context
+  const store = useViewStoreHook();
+
+  // Per-view UI visibility — driven by the store, not local state
+  const isGridSettingsOpen = useAtlasStore(s => s.isGridSettingsOpen);
+  const setGridSettingsOpen = useAtlasStore(s => s.setGridSettingsOpen);
+  const isGridAlignmentOpen = useAtlasStore(s => s.isGridAlignmentOpen);
+  const setGridAlignmentOpen = useAtlasStore(s => s.setGridAlignmentOpen);
+  const isDiceLogOpen = useAtlasStore(s => s.isDiceLogOpen);
+  const setDiceLogOpen = useAtlasStore(s => s.setDiceLogOpen);
+  const isHotkeyHelpOpen = useAtlasStore(s => s.isHotkeyHelpOpen);
+  const setHotkeyHelpOpen = useAtlasStore(s => s.setHotkeyHelpOpen);
+
+  useMapNavigationHotkeys(view, store, settings);
+
+  const switchTab = (tabId: string): void => {
+    if (view) runInBackground(view.switchToTab(tabId), 'Switching scene tab');
+  };
+  const presentTab = (tabId: string): void => {
+    if (view) void presentSceneTab(app, view, tabId);
+  };
+  const presentedScene = usePresentedScene(app);
+
+  // Context value with all required objects
+  const contextValue: AtlasUIContextValue = useMemo(
+    () => ({
+      app,
+      view,
+      pixiApp,
+      renderer: view?.renderer ?? null,
+    }),
+    [app, view, pixiApp]
+  );
+
+  // Check if this is a player view - use store state which is authoritative
+  const storeIsPlayerView = useAtlasStore(state => state.isPlayerView);
+  const isPlayerView = storeIsPlayerView || view?.getViewType?.() === 'atlas-vtt-player';
+  // Get loading state from store
+  const isMapLoading = useAtlasStore(state => state.isMapLoading);
+  const mapLoadingProgress = useAtlasStore(state => state.mapLoadingProgress);
+  const mapLoadingMessage = useAtlasStore(state => state.mapLoadingMessage);
+
+  // Get initiative state and actions for keyboard shortcuts
+  const initiativeTrackerOpen = useAtlasStore(state => state.initiativeTrackerOpen);
+  const initiativeIsActive = useAtlasStore(state => state.initiative?.isActive);
+  const nextTurn = useAtlasStore(state => state.nextTurn);
+  const previousTurn = useAtlasStore(state => state.previousTurn);
+
+  // Handle keyboard shortcuts for DM view
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!canRunMapHotkeys(e, view?.viewId)) return;
+      if (matchesMapHotkey(e, 'help', settings)) {
+        e.preventDefault(); store.getState().setHotkeyHelpOpen(true); return;
+      }
+
+      // Enter: Toggle Dice Roll Log (both DM and player views)
+      if (matchesMapHotkey(e, 'diceLog', settings)) {
+        e.preventDefault();
+        store.getState().setDiceLogOpen(!store.getState().isDiceLogOpen);
+        return;
+      }
+
+      // Tab: Toggle DM screen (DM view only)
+      if (!isPlayerView && matchesMapHotkey(e, 'dashboard', settings)) {
+        e.preventDefault();
+        store.getState().setDMScreenOpen(!store.getState().isDMScreenOpen);
+        return;
+      }
+
+      if (!isPlayerView) {
+        if (matchesMapHotkey(e, 'nextMood', settings)) {
+          e.preventDefault();
+          SoundDirector.forApp(app).pressNext();
+          return;
+        }
+        if (matchesMapHotkey(e, 'silence', settings)) {
+          e.preventDefault();
+          SoundDirector.forApp(app).desk.toggleSilence();
+          return;
+        }
+      }
+
+      // Arrow Up/Down: Navigate initiative order (DM view, tracker open, combat active)
+      if (!isPlayerView && initiativeTrackerOpen && initiativeIsActive) {
+        if (matchesMapHotkey(e, 'previousTurn', settings)) {
+          e.preventDefault();
+          previousTurn(defeatedOnMap(app, store.getState()));
+          window.dispatchEvent(new CustomEvent('atlas-initiative-hotkey', { detail: 'prev' }));
+          return;
+        }
+        if (matchesMapHotkey(e, 'nextTurn', settings)) {
+          e.preventDefault();
+          nextTurn(defeatedOnMap(app, store.getState()));
+          window.dispatchEvent(new CustomEvent('atlas-initiative-hotkey', { detail: 'next' }));
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [app, isPlayerView, initiativeTrackerOpen, initiativeIsActive, nextTurn, previousTurn, store, view, settings]);
+
+  return (
+    <AtlasUIContext.Provider value={contextValue}>
+      <ContextMenuProvider>
+        <AnimatePresence>
+          {isHotkeyHelpOpen && (
+            <PanelBoundary key="cheat-sheet" name="the cheat sheet">
+              <HotkeyHelp
+                settings={settings}
+                isPlayerView={isPlayerView}
+                onClose={() => setHotkeyHelpOpen(false)}
+                onTour={isPlayerView ? undefined : () => { setHotkeyHelpOpen(false); settings?.replayTutorial('map'); }}
+              />
+            </PanelBoundary>
+          )}
+        </AnimatePresence>
+        {!isPlayerView && <PanelBoundary name="the tours"><MapTours root={view?.containerEl ?? null} settings={settings} /></PanelBoundary>}
+        <div className="atlas-ui" style={{ position: 'relative', width: '100%', height: '100%' }}>
+          {/* Every surface has its own boundary: one that fails must not take the others with it */}
+          {/* Map chrome stays mounted while a scene loads; the loading overlay blocks input meanwhile */}
+          {/* Top row — scene tabs (DM only) and widget bar share one flex row */}
+          <div className="atlas-top-bar-row">
+            {/* The scene tabs at the left end; what hangs directly below them (online play's table log tab) is put in the slot */}
+            <div className="atlas-top-bar-start">
+              {!isPlayerView && (
+                <PanelBoundary name="the scene tabs">
+                  <SceneTabBar
+                    onSwitchTab={switchTab}
+                    onCloseTab={(tabId) => { if (view) runInBackground(view.closeTab(tabId), 'Closing scene tab'); }}
+                    onMoveTab={(tabId, toIndex) => view?.moveTab(tabId, toIndex)}
+                    onAddTab={() => view?.openSceneBrowser()}
+                    onPresentTab={presentTab}
+                    presentedTabId={presentedScene?.tabId ?? null}
+                    onShowAllTabs={() => setSceneSwitcherOpen(true)}
+                  />
+                </PanelBoundary>
+              )}
+              <div className="atlas-top-bar-start__below">
+                {!isPlayerView && <PanelBoundary name="the player window bar"><PlayerWindowBar view={view} /></PanelBoundary>}
+              </div>
+            </div>
+            {/* Widgets and the DM's dice rolls share the right end: the rolls stand over the widgets, in front of everything */}
+            <div className="atlas-top-bar-end">
+              <PanelBoundary name="the widgets">
+                <ResponsiveWidgetBar isPlayerView={isPlayerView} store={store} viewId={view?.viewId} />
+              </PanelBoundary>
+              {!isPlayerView && <PanelBoundary name="the dice rolls"><DiceRollDisplay /></PanelBoundary>}
+            </div>
+          </div>
+
+          {/* Bottom row — undo/redo docked left of the main toolbar; view actions and the shortcuts button (DM only) at the right edge */}
+          <BottomToolbarRow
+            lead={!isPlayerView && <PanelBoundary name="online play's place"><OnlinePlaySlot /></PanelBoundary>}
+            start={!isPlayerView && (
+              <>
+                <OnlinePlayRoom />
+                <PanelBoundary name="undo and redo"><UndoRedoControls viewId={view?.viewId} /></PanelBoundary>
+              </>
+            )}
+            end={!isPlayerView && (
+              <>
+                <PanelBoundary name="the view actions"><ViewActionsMenu app={app} filePath={view?.file?.path} /></PanelBoundary>
+                <PanelBoundary name="the keyboard shortcuts button"><HotkeyHelpButton /></PanelBoundary>
+              </>
+            )}
+            above={!isPlayerView && (
+              <>
+                <PanelBoundary name="the turn banner"><TurnAnnouncer /></PanelBoundary>
+                <PanelBoundary name="the placing hint"><PlacementHint /></PanelBoundary>
+              </>
+            )}
+            options={(
+              <>
+                {!isPlayerView && <PanelBoundary name="the fog tools"><FogToolBar /></PanelBoundary>}
+                {!isPlayerView && <PanelBoundary name="the lighting tools"><LightingToolBar /></PanelBoundary>}
+                <PanelBoundary name="the measure tools"><MeasureToolBar playerView={isPlayerView} /></PanelBoundary>
+                {!isPlayerView && <PanelBoundary name="the draw tools"><DrawToolBar /></PanelBoundary>}
+              </>
+            )}
+          >
+            <PanelBoundary name="the toolbar"><MainToolbar viewId={view?.viewId} /></PanelBoundary>
+          </BottomToolbarRow>
+
+          {!isPlayerView && !isMapLoading && (
+            <PanelBoundary name="the level switcher"><LevelSwitcher /><LevelLinkPopoverHost /></PanelBoundary>
+          )}
+
+          {!isPlayerView && !isMapLoading && (
+            <PanelBoundary name="the scene switcher">
+              <SceneSwitcher isOpen={isSceneSwitcherOpen} onOpenChange={setSceneSwitcherOpen} onSwitchTab={switchTab} onPresentTab={presentTab} />
+            </PanelBoundary>
+          )}
+          
+          {/* Grid Settings Modal - only render when needed */}
+          {isGridSettingsOpen && (
+            <PanelBoundary name="the grid settings">
+              <GridSettingsModal isOpen={isGridSettingsOpen} onClose={() => setGridSettingsOpen(false)} view={view} />
+            </PanelBoundary>
+          )}
+
+          {/* Grid Alignment Overlay - only render when needed */}
+          {isGridAlignmentOpen && (
+            <PanelBoundary name="the grid alignment"><GridAlignmentOverlay onClose={() => setGridAlignmentOpen(false)} /></PanelBoundary>
+          )}
+
+          {/* DM screen - only for DM view */}
+          {!isPlayerView && (
+            <PanelBoundary name="the DM screen">
+              <DMScreenFromStore />
+            </PanelBoundary>
+          )}
+
+          {!isPlayerView && <PanelBoundary name="the dungeon generator"><DungeonGeneratorOverlay /></PanelBoundary>}
+
+          {/* Dice Roll Log - left side panel */}
+          <PanelBoundary name="the dice log"><DiceRollLog isOpen={isDiceLogOpen} onClose={() => setDiceLogOpen(false)} /></PanelBoundary>
+
+          {/* Initiative Tracker - only for DM view */}
+          {!isPlayerView && <PanelBoundary name="the initiative tracker"><InitiativeTracker /></PanelBoundary>}
+
+          {/* Loot Roller - floating window, DM only */}
+          {!isPlayerView && <PanelBoundary name="the random tables"><RandomTables /></PanelBoundary>}
+          {!isPlayerView && <PanelBoundary name="the documentation"><DocsWindow /></PanelBoundary>}
+          {!isPlayerView && <PanelBoundary name="the players' glass"><GlassChip view={view} /></PanelBoundary>}
+          {!isPlayerView && <PanelBoundary name="the light settings"><LightPopoverHost /><LightZonePopoverHost /><LevelSurfacePopoverHost /></PanelBoundary>}
+          {!isPlayerView && <PanelBoundary name="the selection bar"><SelectionBarHost /></PanelBoundary>}
+          {!isPlayerView && <PanelBoundary name="the measurement's settings"><MeasurePopoverHost /></PanelBoundary>}
+
+          {/* Player Character Sheet - REMOVED: Players should only edit via their character sheet file */}
+          
+          {/* Loading overlay - renders last to be on top of everything */}
+          <PanelBoundary name="the loading overlay">
+            <MapLoadingOverlay
+              isLoading={isMapLoading}
+              {...(mapLoadingProgress !== undefined ? { progress: mapLoadingProgress } : {})}
+              {...(mapLoadingMessage !== undefined ? { message: mapLoadingMessage } : {})}
+            />
+          </PanelBoundary>
+
+        </div>
+      </ContextMenuProvider>
+    </AtlasUIContext.Provider>
+  );
+};

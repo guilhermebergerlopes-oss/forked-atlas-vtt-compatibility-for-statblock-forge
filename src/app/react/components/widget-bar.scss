@@ -1,0 +1,375 @@
+// Widget bar — counters, clocks and timers floating above the map, each on its own card.
+// Each widget sets --widget-color; every tint, ring and glow derives from it.
+@use '../../../../styles/tokens' as *;
+@use '../../../../styles/mixins' as *;
+
+$widget-value-size: 28px;
+$widget-bar-offset: $spacing-s;
+
+// Top right, where the DM's top row (main.scss) also places it, never wider than the window.
+.atlas-widget-bar {
+  position: fixed;
+  top: $widget-bar-offset;
+  right: $widget-bar-offset;
+  max-width: calc(100vw - 2 * #{$widget-bar-offset});
+  z-index: 50; // below the asset manager (100)
+  pointer-events: none;
+  // Slides clear of the window's buttons while in use (useClearOfWindowControls).
+  transition: translate $transition-normal $transition-ease-out;
+}
+
+// Lays the cards out without a panel of its own; only the cards catch the pointer,
+// so the gaps between them stay clickable on the map. Cards that do not fit in one
+// row wrap into more, right-aligned under the first.
+.atlas-widget-container {
+  @include atlas-flex-row($spacing-s);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+// The stack's one control, over its whole box (`useWidgetStack`); the cards under it are inert.
+.atlas-widget-stack-opener {
+  @include atlas-panel-radius($surface-radius);
+  @include atlas-focus-ring;
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  pointer-events: auto;
+
+  &:hover {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+// The number of cards, on the top card's corner.
+.atlas-widget-stack-count {
+  position: absolute;
+  top: -$spacing-xs;
+  right: -$spacing-xs;
+  box-sizing: border-box;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 $spacing-xs;
+  border-radius: $radius-full;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-bold;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  text-align: center;
+}
+
+// ── Widget card ──────────────────────────────────────────────────────────────
+
+.atlas-widget {
+  --widget-color: var(--interactive-accent);
+
+  @include atlas-elevated-surface;
+  @include atlas-panel-radius($surface-radius);
+  @include atlas-flex-row($surface-inset);
+  position: relative;
+  padding: $surface-inset;
+  pointer-events: auto;
+  transition: border-color $transition-normal $transition-ease,
+              box-shadow $transition-normal $transition-ease-out,
+              background-color $transition-normal $transition-ease,
+              transform $transition-normal $transition-ease-out,
+              opacity $transition-normal $transition-ease;
+}
+
+.atlas-widget-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: $button-height-l;
+  height: $button-height-l;
+  color: var(--widget-color);
+  transition: width $transition-normal $transition-ease-out,
+              height $transition-normal $transition-ease-out;
+
+  svg {
+    width: $icon-l;
+    height: $icon-l;
+  }
+}
+
+// The icon fills the card's left corners; the value and label end on the menus' text edge, $spacing-m
+// inside the card's padding.
+.atlas-widget-content {
+  @include atlas-flex-col($spacing-xs);
+  align-items: center;
+  padding-inline-end: $spacing-m;
+}
+
+.atlas-widget-value-row {
+  @include atlas-flex-row($spacing-xs);
+}
+
+// ── Value, inline editor ─────────────────────────────────────────────────────
+
+.atlas-widget-value,
+.atlas-timer-display,
+.atlas-widget-value-input,
+.atlas-timer-edit-input {
+  min-width: 2ch;
+  padding: 0 $spacing-xs;
+  border-radius: $radius-s;
+  font-size: $widget-value-size;
+  font-weight: $font-weight-bold;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--text-normal);
+}
+
+.atlas-widget-value,
+.atlas-timer-display {
+  transition: background-color $transition-fast $transition-ease,
+              transform $transition-press $transition-ease-out;
+
+  &.editable {
+    cursor: text;
+
+    &:hover {
+      background: var(--background-modifier-hover);
+    }
+  }
+}
+
+.atlas-widget-value-input,
+.atlas-timer-edit-input {
+  height: auto;
+  background: var(--background-modifier-form-field);
+  border: none;
+  outline: none;
+  box-shadow: 0 0 0 $border-width-l var(--widget-color);
+  appearance: textfield;
+
+  &::-webkit-inner-spin-button,
+  &::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+}
+
+.atlas-widget-value-input { width: 3ch; box-sizing: content-box; }
+.atlas-timer-edit-input { width: 5ch; box-sizing: content-box; }
+
+// ── Progress clock face ──────────────────────────────────────────────────────
+
+// Same height as a counter's value, so clocks and counters line up in one bar.
+.atlas-clock-face {
+  flex-shrink: 0;
+  width: $button-height-m;
+  height: $button-height-m;
+  overflow: visible;
+}
+
+// Wedges are separated by strokes in the card's colour, so they read as cut pieces.
+.atlas-clock-wedge {
+  fill: color-mix(in oklch, var(--widget-color) 14%, transparent);
+  stroke: var(--background-primary);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  transition: fill $transition-fast $transition-ease;
+
+  &.is-filled {
+    fill: var(--widget-color);
+  }
+}
+
+// Only the GM's bar changes a clock by clicking its wedges.
+.atlas-widget-clock:has(.atlas-widget-btn) .atlas-clock-wedge {
+  cursor: pointer;
+
+  &:hover {
+    fill: color-mix(in oklch, var(--widget-color) 40%, transparent);
+  }
+
+  &.is-filled:hover {
+    fill: color-mix(in oklch, var(--widget-color) 80%, var(--background-primary));
+  }
+}
+
+.atlas-clock-count {
+  fill: var(--text-normal);
+  font-weight: $font-weight-bold;
+  font-variant-numeric: tabular-nums;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.atlas-widget-clock.clock-complete {
+  border-color: var(--widget-color);
+}
+
+// ── Step / transport buttons ─────────────────────────────────────────────────
+
+.atlas-widget-btn,
+.atlas-timer-btn {
+  @include atlas-icon-button('s');
+  @include atlas-ghost-button;
+  @include atlas-focus-ring;
+  flex-shrink: 0;
+  padding: 0;
+  box-shadow: none;
+  transition: opacity $transition-normal $transition-ease,
+              width $transition-normal $transition-ease-out,
+              background-color $transition-fast $transition-ease,
+              color $transition-fast $transition-ease,
+              transform $transition-press $transition-ease-out;
+
+  &:active {
+    transform: scale(0.9);
+  }
+}
+
+// ── Label + shortcut keycap ──────────────────────────────────────────────────
+
+.atlas-widget-label {
+  @include atlas-flex-row($spacing-xs);
+  max-width: 100%;
+  max-height: 2em;
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-medium;
+  line-height: 1.3;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity $transition-normal $transition-ease,
+              max-height $transition-normal $transition-ease-out;
+}
+
+.atlas-widget-label-text {
+  @include atlas-truncate;
+  max-width: 14ch;
+}
+
+.atlas-widget-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: $spacing-l;
+  height: $spacing-l;
+  padding: 0 $spacing-xs;
+  border: $border-width-s solid var(--background-modifier-border);
+  border-radius: $radius-s;
+  background: var(--background-primary);
+  font-family: var(--font-monospace);
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  line-height: 1;
+  color: var(--text-faint);
+}
+
+// ── Passive bar: collapses to icon + value after a few idle seconds ──
+
+.atlas-widget-bar.passive {
+  .atlas-widget-icon-wrapper {
+    width: $button-height-m;
+    height: $button-height-m;
+  }
+
+  .atlas-widget-label {
+    max-width: 0;
+    max-height: 0;
+    opacity: 0;
+  }
+
+  .atlas-widget-content {
+    gap: 0;
+  }
+
+  .atlas-widget-btn,
+  .atlas-timer-btn {
+    width: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .atlas-widget-value-row {
+    gap: 0;
+  }
+
+  // A running timer keeps its pause button reachable
+  .atlas-widget-timer.timer-running .atlas-timer-btn:first-child {
+    width: $button-height-s;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+// ── Feedback states ──────────────────────────────────────────────────────────
+
+.atlas-widget {
+  // Pressed / being interacted with
+  &.widget-active {
+    border-color: color-mix(in oklch, var(--widget-color) 60%, transparent);
+  }
+
+  // Number key held: this widget is the +/- target
+  &.widget-key-held {
+    background: color-mix(in oklch, var(--widget-color) 10%, var(--background-primary));
+    border-color: var(--widget-color);
+
+    .atlas-widget-shortcut {
+      border-color: var(--widget-color);
+      color: var(--widget-color);
+    }
+  }
+
+  // Value changed; intensity stacks on rapid clicks (1–3)
+  &.widget-pulse {
+    border-color: var(--widget-color);
+    box-shadow: $shadow-elevated,
+      0 0 calc(8px * var(--pulse-intensity, 1)) color-mix(in oklch, var(--widget-color) 35%, transparent);
+    transition-duration: $transition-fast;
+
+    .atlas-widget-value {
+      transform: scale(calc(1 + var(--pulse-intensity, 1) * 0.06));
+    }
+  }
+
+  &.timer-expired {
+    --widget-color: var(--text-error) !important; // beats the inline per-widget colour
+    animation: atlas-timer-expired 0.5s $transition-ease-in-out 3;
+
+    .atlas-timer-display {
+      color: var(--text-error);
+    }
+  }
+}
+
+@keyframes atlas-timer-expired {
+  50% {
+    border-color: var(--text-error);
+    box-shadow: $shadow-elevated, 0 0 $spacing-l color-mix(in oklch, var(--text-error) 40%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-widget,
+  .atlas-widget *,
+  .atlas-widget-container {
+    transition-duration: 0.01ms !important;
+    animation: none !important;
+  }
+
+  .atlas-widget.widget-pulse .atlas-widget-value,
+  .atlas-widget-btn:active,
+  .atlas-timer-btn:active {
+    transform: none;
+  }
+}

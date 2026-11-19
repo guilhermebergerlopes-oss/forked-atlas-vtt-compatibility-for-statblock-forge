@@ -1,0 +1,266 @@
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+
+// ── Command palette shell ───────────────────────────────────────────────────
+// Opened by hotkey many times per session: the shell rises out of the toolbar
+// in a short Framer Motion animation (CommandPalette.tsx). Besides that, the
+// shell morphs between list and settings panel, and controls give press feedback.
+
+.atlas-command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: auto;
+  font-family: var(--font-interface);
+  // The palette's size limits below read the view's size from here.
+  container-type: size;
+}
+
+.atlas-command-palette-backdrop {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+
+// Places the palette above the toolbar and slides it between the list's and
+// the settings panel's position. Its transform is its own, so the window's
+// open / close animation can use the window's.
+.atlas-command-palette-anchor {
+  position: absolute;
+  transition: left $transition-normal $transition-ease-out,
+              transform $transition-normal $transition-ease-out;
+
+  &--hidden {
+    visibility: hidden;
+  }
+
+  // Position is measured after mount; skip the transition until it is known.
+  &.atlas-no-transition,
+  &.atlas-no-transition .atlas-command-palette-container {
+    transition: none;
+  }
+}
+
+// The palette as it is animated. It does not clip, so a theme can draw around
+// the palette with this element's pseudo-elements (`::before` below the
+// container with a negative `z-index`, `::after` above it) and have that move
+// and fade with the palette.
+.atlas-command-palette-window {
+  position: relative;
+  isolation: isolate;
+  transform-origin: bottom center;
+}
+
+.atlas-command-palette-container {
+  @include atlas-elevated-surface;
+  @include atlas-panel-radius($surface-radius);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 600px;
+  height: 450px;
+  // A small view shrinks the palette instead of cutting it off.
+  max-width: calc(100cqw - #{2 * $spacing-l});
+  max-height: calc(100cqh - var(--atlas-palette-bottom, 0px) - #{$spacing-l});
+  overflow: hidden;
+  transition: width $transition-normal $transition-ease-out,
+              height $transition-normal $transition-ease-out;
+
+  &--expanded {
+    width: 900px;
+    height: auto;
+    max-height: 650px;
+  }
+
+}
+
+// ── Search ──────────────────────────────────────────────────────────────────
+
+.atlas-command-palette-search {
+  padding: $spacing-s $spacing-s 0;
+}
+
+.atlas-command-palette-search-inner {
+  @include atlas-flex-row($spacing-xs);
+  // Fixed height: the clear button appearing must never change the box size
+  height: 36px;
+  padding: 0 $spacing-xs;
+  background: var(--background-modifier-form-field);
+  border: $border-width-s solid var(--background-modifier-border);
+  @include atlas-panel-inset-radius($spacing-s);
+  transition: border-color $transition-fast $transition-ease,
+              box-shadow $transition-fast $transition-ease;
+
+  // The caret is enough feedback; no focus ring on click
+  &:focus-within {
+    border-color: var(--background-modifier-border-hover);
+  }
+}
+
+.atlas-command-palette-search-inner .atlas-clear-btn {
+  &.btn,
+  &.btn--icon {
+    width: 22px;
+    height: 22px;
+    // Inside the field's end: concentric with its corner.
+    border-radius: $control-inset-radius;
+  }
+
+  svg {
+    width: $icon-xs;
+    height: $icon-xs;
+  }
+}
+
+.atlas-command-palette-search-icon {
+  width: $icon-s;
+  height: $icon-s;
+  margin: 0 $spacing-xs;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.atlas-command-palette-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: $font-ui-medium;
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+
+  &:hover,
+  &:focus {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    outline: none;
+  }
+}
+
+// ── Tabs ────────────────────────────────────────────────────────────────────
+
+.atlas-command-palette-tabs {
+  display: flex;
+  gap: $spacing-s;
+  padding: $spacing-s;
+  border-bottom: $border-width-s solid var(--divider-color);
+}
+
+.atlas-command-palette-tab.btn {
+  // Four equal tabs filling the row with centered labels
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  gap: $spacing-xs;
+  padding: 0 $spacing-s;
+  color: var(--text-muted);
+  transition: transform $transition-press $transition-ease-out,
+              background-color $transition-fast $transition-ease,
+              color $transition-fast $transition-ease;
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.atlas-active {
+    background: color-mix(in oklch, var(--interactive-accent) 14%, transparent);
+    color: var(--text-normal);
+  }
+}
+
+.atlas-command-palette-tab-label {
+  @include atlas-truncate;
+}
+
+// ── Footer ──────────────────────────────────────────────────────────────────
+
+.atlas-command-palette-footer {
+  @include atlas-flex-row($spacing-m);
+  justify-content: space-between;
+  padding: $spacing-m;
+  border-top: $border-width-s solid var(--divider-color);
+  background: var(--background-secondary);
+  font-size: $font-ui-smaller;
+  color: var(--text-muted);
+}
+
+.atlas-command-palette-footer-left,
+.atlas-command-palette-footer-right {
+  @include atlas-flex-row($spacing-m);
+}
+
+.atlas-command-palette-footer-item {
+  @include atlas-flex-row($spacing-xs);
+}
+
+.atlas-command-palette-footer-arrows {
+  display: flex;
+  align-items: center;
+}
+
+.atlas-command-palette-arrow {
+  width: $icon-xs;
+  height: $icon-xs;
+  color: var(--text-faint);
+
+  &.atlas-down {
+    transform: rotate(180deg);
+  }
+}
+
+// Keyboard hint chip, shared by list rows and the footer
+.atlas-command-palette-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 $spacing-xs;
+  border: $border-width-s solid var(--background-modifier-border);
+  border-radius: $radius-s;
+  background: var(--background-secondary-alt);
+  font-family: var(--font-monospace);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-medium;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+// ── Empty state ─────────────────────────────────────────────────────────────
+
+.atlas-command-palette-empty {
+  @include atlas-flex-col($spacing-xs);
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-2xl;
+  text-align: center;
+}
+
+.atlas-command-palette-empty-text {
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  color: var(--text-muted);
+}
+
+.atlas-command-palette-empty-hint {
+  font-size: $font-ui-smaller;
+  color: var(--text-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-command-palette-anchor,
+  .atlas-command-palette-container {
+    transition: none;
+  }
+
+  .atlas-command-palette-tab.btn:active {
+    transform: none;
+  }
+}

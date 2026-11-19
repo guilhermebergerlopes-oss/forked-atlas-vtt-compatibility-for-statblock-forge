@@ -1,0 +1,80 @@
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+
+.atlas-progress-modal-overlay {
+  @include atlas-modal-overlay($z-atlas-modal);
+}
+
+.atlas-progress-modal {
+  @include atlas-modal-window;
+  align-items: center;
+  width: 320px;
+  padding: $spacing-xl;
+  gap: $spacing-xl;
+  text-align: center;
+
+  &__spinner {
+    width: 40px;
+    height: 40px;
+    border: $border-width-m solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: atlas-progress-modal-spin 0.9s linear infinite;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: $font-ui-large;
+    font-weight: $font-weight-semibold;
+  }
+
+  &__message {
+    margin: 0;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__actions {
+    @include atlas-flex-row($gap: $spacing-s);
+    justify-content: center;
+  }
+
+  // Nested, so it outranks the bar's own default height whatever the stylesheet order
+  .atlas-progress-modal__bar {
+    --atlas-progress-bar-height: 6px;
+    width: 100%;
+  }
+}
+
+// Busy work that finishes quickly (reading a collection before its dialog opens)
+// never shows the card: it only fades in once the work takes a noticeable moment.
+.atlas-progress-modal-overlay[aria-busy='true'] .atlas-progress-modal {
+  animation: atlas-progress-modal-appear $transition-normal $transition-ease-out 250ms both;
+}
+
+@keyframes atlas-progress-modal-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-progress-modal-overlay[aria-busy='true'] .atlas-progress-modal {
+    animation-name: atlas-progress-modal-fade;
+  }
+}
+
+@keyframes atlas-progress-modal-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes atlas-progress-modal-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-progress-modal__spinner { animation-duration: 2s; }
+}

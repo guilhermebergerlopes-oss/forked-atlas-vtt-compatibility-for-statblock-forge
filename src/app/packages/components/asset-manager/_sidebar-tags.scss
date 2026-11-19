@@ -1,0 +1,179 @@
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+@use 'variables' as *;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Asset Manager – Sidebar tags
+// ═══════════════════════════════════════════════════════════════════════════
+
+.atlas-asset-manager-sidebar .atlas-tags {
+  @include atlas-flex-col($gap: $spacing-s);
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.atlas-tags-header {
+  @include atlas-flex-row($gap: $spacing-s);
+  justify-content: space-between;
+  height: 24px;
+}
+
+.atlas-tags-heading {
+  @include atlas-flex-row($gap: $spacing-s);
+  min-width: 0;
+}
+
+.atlas-tags-clear-wrapper {
+  display: inline-flex;
+}
+
+// Tinted like the selected tags it clears, so it reads as their summary.
+.atlas-asset-manager-sidebar .atlas-tags-clear.btn {
+  height: 18px;
+  // Less on the right: the X glyph carries its own whitespace.
+  padding: 0 $spacing-xs 0 $spacing-s;
+  gap: 0;
+  border-radius: $radius-full;
+  background-color: color-mix(in oklch, var(--interactive-accent) 14%, transparent);
+  @include atlas-accent-text;
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-medium;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  transition: background-color $transition-fast $transition-ease,
+              transform $transition-press $transition-ease-out;
+
+  &:hover {
+    background-color: color-mix(in oklch, var(--interactive-accent) 24%, transparent);
+    @include atlas-accent-text;
+  }
+
+  &:active {
+    transform: scale(0.94);
+  }
+
+  svg {
+    width: 10px;
+    height: 10px;
+    stroke-width: 2.5;
+  }
+}
+
+.atlas-tags-search-container {
+  position: relative;
+  @include atlas-flex-row($gap: $spacing-xs);
+  height: $control-height;
+  padding: 0 $spacing-xs 0 $spacing-s;
+  background: var(--background-modifier-form-field);
+  border: $border-width-s solid $am-control-border;
+  border-radius: $radius-m;
+
+  &:focus-within {
+    border-color: $am-control-border-focus;
+  }
+
+  // The clear button at the field's end.
+  .atlas-collection-header-btn.btn {
+    border-radius: $search-field-button-radius;
+  }
+
+  .atlas-tags-search-icon {
+    width: $icon-xs;
+    height: $icon-xs;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  .atlas-tags-search-input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    color: var(--text-normal);
+    font-size: $font-ui-small;
+    font-family: var(--font-interface);
+
+    &::placeholder {
+      color: var(--text-faint);
+    }
+  }
+}
+
+.atlas-tags-list {
+  @include atlas-flex-col($gap: 0);
+}
+
+.atlas-tag-button {
+  appearance: none;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none;
+  width: 100%;
+  height: $control-height;
+  padding: 0 $spacing-s;
+  @include atlas-flex-row($gap: $spacing-s);
+  border-radius: $radius-m;
+  background-color: transparent !important;
+  color: var(--text-muted);
+  font-size: $font-ui-small;
+  text-align: left;
+  cursor: pointer;
+  transition: transform $transition-press $transition-ease-out;
+
+  &:hover {
+    background-color: var(--nav-item-background-hover) !important;
+    color: var(--text-normal);
+  }
+
+  &:active {
+    background-color: var(--background-modifier-active-hover) !important;
+    transform: scale(0.98);
+  }
+
+  &.atlas-active {
+    background-color: color-mix(in oklch, var(--interactive-accent) 14%, transparent) !important;
+    @include atlas-accent-text;
+
+    .atlas-tag-icon {
+      color: var(--text-accent);
+    }
+
+    .atlas-tag-count {
+      @include atlas-accent-text;
+    }
+  }
+
+  .atlas-tag-icon {
+    flex-shrink: 0;
+    width: $icon-xs;
+    height: $icon-xs;
+    color: var(--text-faint);
+  }
+
+  .atlas-tag-text {
+    flex: 1;
+    min-width: 0;
+    @include atlas-truncate;
+  }
+
+  .atlas-tag-count {
+    flex-shrink: 0;
+    font-size: $font-ui-smaller;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.atlas-tags-empty {
+  padding: $spacing-m $spacing-s;
+
+  .atlas-tags-empty-text {
+    color: var(--text-muted);
+    font-size: $font-ui-small;
+  }
+}

@@ -1,0 +1,556 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// Collection Settings Modal
+// ═══════════════════════════════════════════════════════════════════════════
+
+@use '../../../../styles/tokens' as *;
+@use '../../../../styles/mixins' as *;
+@use '../../../../styles/sidebar-dialog' as *;
+
+// The widest a form tab's page grows in the fullscreen dialog: its lines stay readable.
+$settings-page-width: 760px;
+
+// ── Overlay / Backdrop ─────────────────────────────────────────────────────
+// Portaled to document.body, so the overlay itself carries .atlas-vtt-plugin.
+&.atlas-collection-settings-overlay {
+  @include atlas-modal-overlay($z-atlas-modal);
+}
+
+.atlas-collection-settings-backdrop {
+  position: absolute;
+  inset: 0;
+}
+
+// ── Modal Card ─────────────────────────────────────────────────────────────
+.atlas-collection-settings-modal {
+  @include atlas-elevated-surface;
+  @include atlas-panel-radius($surface-radius);
+  position: relative;
+  // A dialog with a sidebar (`_sidebar-dialog.scss`). The tabs' body (`RulesSettingsTabs`) lends its parts to the
+  // window's grid. Where the sidebar gives way to a select, the sidebar's column takes no room and the select stands
+  // in the `top` row under the title (both are `auto`). Its parts ask its width.
+  @include atlas-sidebar-dialog($container: atlas-settings-dialog);
+  // Tall rather than wide: condition and system lists grow downwards. On short
+  // screens the window takes the height the overlay leaves instead of scrolling early.
+  width: 660px;
+  max-width: 100%;
+  height: 760px;
+  max-height: 100%;
+}
+
+// Narrower than this the sidebar (180 px and more) leaves a page too narrow for its forms.
+$settings-stack-below: 520px;
+
+// Fills the Obsidian window but for the overlay's margin ($spacing-2xl), so the Resources tab has
+// room for the template's card beside the token.
+.atlas-collection-settings-modal--fullscreen {
+  width: 100%;
+  height: 100%;
+}
+
+// ── Header ─────────────────────────────────────────────────────────────────
+.atlas-collection-settings-header {
+  // The title takes every dialog's title style (atlas-modal-header).
+  @include atlas-sidebar-dialog-header($container: atlas-settings-dialog);
+}
+
+// ── Body (sidebar + content) ───────────────────────────────────────────────
+// No box of its own: its sidebar, select and page are placed in the window's grid.
+.atlas-collection-settings-body {
+  display: contents;
+}
+
+// ── Vertical Tab Sidebar ───────────────────────────────────────────────────
+// Rows like Obsidian's own settings sidebar: grouped under small headings, left-aligned, one icon column, one line.
+// The column is as wide as its longest label (in any language), so no label wraps; past the cap one is cut.
+.atlas-collection-settings-sidebar {
+  @include atlas-sidebar-dialog-side($container: atlas-settings-dialog);
+  width: max-content;
+  min-width: 180px;
+  max-width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-l;
+  padding: $spacing-s;
+  overflow-y: auto;
+}
+
+.atlas-collection-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+// A section label, told from its rows by size, weight and colour, not colour alone.
+.atlas-collection-settings-group-title {
+  padding: 0 $spacing-s $spacing-xs;
+  @include atlas-section-label;
+}
+
+// Without group headings the first tab stands in the window's top-left corner, concentric with it.
+.atlas-collection-settings-sidebar
+  > .atlas-collection-settings-group:first-child
+  > .atlas-collection-settings-group-title[hidden]
+  + .atlas-collection-settings-tab.btn {
+  @include atlas-panel-inset-radius($spacing-s, top-left);
+}
+
+// `.atlas-vtt-plugin .btn` centres a button's content with wide side padding; a tab row starts at its icon.
+.atlas-collection-settings-sidebar .atlas-collection-settings-tab.btn {
+  justify-content: flex-start;
+  width: 100%;
+  height: $button-height-m;
+  padding: 0 $spacing-s;
+  gap: $spacing-s;
+  border-radius: $radius-m;
+  color: var(--text-muted);
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  text-align: start;
+  white-space: nowrap;
+
+  svg {
+    width: $icon-s;
+    height: $icon-s;
+    flex-shrink: 0;
+  }
+
+  &:hover:not(.atlas-active) {
+    color: var(--text-normal);
+    background: var(--background-modifier-hover) !important;
+  }
+
+  &.atlas-active {
+    background: var(--background-primary) !important;
+    color: var(--text-normal);
+    box-shadow: $shadow-sm;
+  }
+}
+
+.atlas-collection-settings-tab-label {
+  min-width: 0;
+  @include atlas-truncate;
+}
+
+// ── Narrow (WCAG 1.4.10 Reflow): the tabs as one select over the page ──────
+.atlas-collection-settings-tab-select {
+  @include atlas-sidebar-dialog-top($container: atlas-settings-dialog);
+  display: none;
+}
+
+@container atlas-settings-dialog (max-width: #{$settings-stack-below}) {
+  .atlas-collection-settings-sidebar {
+    display: none;
+  }
+
+  .atlas-collection-settings-tab-select {
+    display: block;
+    flex-shrink: 0;
+    padding: $spacing-l $spacing-l 0;
+  }
+}
+
+// ── Content Area ───────────────────────────────────────────────────────────
+.atlas-collection-settings-content {
+  @include atlas-sidebar-dialog-body($container: atlas-settings-dialog);
+  padding: $spacing-l;
+  @include atlas-flex-col($spacing-l);
+}
+
+// A tab's page: a form keeps a readable width, centred in the window; the Resources tab beside its
+// recovery pane takes all of it. Container queries in a tab ask the page's width.
+.atlas-collection-settings-page {
+  @include atlas-flex-col($spacing-l);
+  container: atlas-settings-page / inline-size;
+  width: 100%;
+  max-width: $settings-page-width;
+  margin-inline: auto;
+}
+
+// ── Played campaign notice ─────────────────────────────────────────────────
+// One line over the rules' tabs: over a collection's while a played campaign's game system applies in their
+// place, over a campaign's while it is not played and no map plays by them.
+.atlas-csm-played-notice {
+  @include atlas-flex-row($spacing-s);
+  justify-content: space-between;
+  padding: $spacing-s;
+  border-radius: $radius-m;
+  background: var(--background-modifier-hover);
+  font-size: $font-ui-small;
+  color: var(--text-muted);
+}
+
+.atlas-csm-played-notice__text {
+  min-width: 0;
+}
+
+.atlas-csm-played-notice__action.btn {
+  flex-shrink: 0;
+  border-radius: $radius-m;
+}
+
+// ── Footer ─────────────────────────────────────────────────────────────────
+.atlas-collection-settings-footer {
+  @include atlas-sidebar-dialog-footer($container: atlas-settings-dialog);
+
+  // Button component handles variant styling; just ensure compact sizing
+  .atlas-csm-cancel,
+  .atlas-csm-save {
+    height: $button-height-m;
+    padding: $spacing-s $spacing-l;
+    font-size: $font-ui-small;
+    font-weight: $font-weight-medium;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tab-specific content styles
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Shared field styles ────────────────────────────────────────────────────
+.atlas-csm-field {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.atlas-csm-label {
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  color: var(--text-muted);
+}
+
+// A label with its info mark, whose tooltip explains a term of the setting.
+.atlas-csm-label-row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+.atlas-csm-info {
+  display: inline-flex;
+  border-radius: $radius-full;
+  color: var(--text-faint);
+  cursor: help;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-normal);
+  }
+}
+
+.atlas-csm-hint {
+  font-size: $font-ui-smaller;
+  color: var(--text-muted);
+  margin: 0;
+  // A readable measure, also where the page is wide.
+  max-width: 70ch;
+}
+
+.atlas-csm-hint--error {
+  @include atlas-error-text;
+}
+
+.atlas-csm-dropdown.atlas-setting-dropdown {
+  width: 100%;
+  border-radius: $radius-m;
+}
+
+.atlas-csm-input {
+  width: 100%;
+  height: $input-height-m;
+  padding: $spacing-xs $spacing-s;
+  background: var(--background-modifier-form-field);
+  border: $border-width-s solid var(--background-modifier-border);
+  // The corner of Atlas' select (`atlas-select-trigger`), so fields and selects side by side match.
+  border-radius: $radius-m;
+  color: var(--text-normal);
+  font-size: $font-ui-small;
+  @include atlas-input-focus;
+
+  &[aria-invalid] {
+    border-color: var(--text-error);
+  }
+}
+
+.atlas-csm-input--number {
+  width: 80px;
+}
+
+// ── Toggle row (used by Widgets and Measurement mode) ──────────────────────
+.atlas-csm-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-s;
+  padding: $spacing-s;
+  border-radius: $radius-m;
+  background: var(--background-secondary);
+  border: $border-width-s solid var(--background-modifier-border);
+}
+
+.atlas-csm-toggle-label {
+  font-size: $font-ui-small;
+  color: var(--text-normal);
+}
+
+// ── Folded-away fields: settings few collections change ────────────────────
+.atlas-csm-details {
+  > summary {
+    cursor: pointer;
+    font-size: $font-ui-small;
+    color: var(--text-muted);
+  }
+
+  // A margin, not a gap: the fields lie in the element's own content slot, which no flex rule reaches.
+  > .atlas-csm-field {
+    margin-top: $spacing-m;
+  }
+}
+
+// ── Range Bands editor ─────────────────────────────────────────────────────
+.atlas-csm-band-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.atlas-csm-band-row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-s;
+  padding: $spacing-xs $spacing-s;
+  background: var(--background-secondary);
+  border: $border-width-s solid var(--background-modifier-border);
+  border-radius: $radius-m;
+
+  .atlas-csm-input {
+    flex: 1;
+    height: $input-height-s;
+  }
+
+  .atlas-csm-input--number {
+    width: 64px;
+    flex: none;
+  }
+}
+
+.atlas-csm-band-delete {
+  &.btn--icon {
+    width: $button-height-s;
+    height: $button-height-s;
+  }
+
+  color: var(--text-error);
+
+  &:hover {
+    color: var(--text-error);
+    background: color-mix(in oklch, var(--background-modifier-error) 15%, transparent) !important;
+  }
+}
+
+.atlas-csm-add-btn {
+  // Override Button component defaults for compact add button
+  height: auto;
+  align-self: flex-start;
+  gap: $spacing-xs;
+  font-size: $font-ui-small;
+  padding: $spacing-xs $spacing-m;
+  border: $border-width-s solid var(--background-modifier-border) !important;
+  border-radius: $radius-m;
+  color: var(--text-normal);
+
+  &:hover {
+    background: var(--background-modifier-hover) !important;
+  }
+}
+
+// ── Conditions list ────────────────────────────────────────────────────────
+.atlas-csm-condition-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.atlas-csm-condition {
+  @include atlas-inset-surface;
+  @include atlas-flex-col($spacing-s);
+  padding: $spacing-s;
+}
+
+.atlas-csm-condition-row {
+  @include atlas-flex-row($spacing-s);
+
+  .atlas-csm-input {
+    flex: 1;
+    height: $input-height-s;
+  }
+}
+
+.atlas-csm-condition-badge-button {
+  @include atlas-focus-ring;
+  display: flex;
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  box-shadow: none;
+  cursor: pointer;
+  transition: transform $transition-fast $transition-ease;
+
+  &:hover,
+  &[aria-expanded="true"] {
+    transform: scale(1.1);
+  }
+}
+
+.atlas-csm-condition-initial {
+  font-weight: $font-weight-bold;
+}
+
+.atlas-csm-color-swatch {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: $radius-m;
+  border: $border-width-s solid var(--background-modifier-border);
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+
+  input[type="color"] {
+    position: absolute;
+    inset: -4px;
+    width: calc(100% + 8px);
+    height: calc(100% + 8px);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+}
+
+.atlas-csm-condition-valued {
+  &.btn--icon {
+    width: $button-height-s;
+    height: $button-height-s;
+  }
+
+  color: var(--text-faint);
+
+  &:hover {
+    color: var(--text-normal);
+  }
+
+  &[aria-pressed='true'] {
+    color: var(--text-accent);
+    background: color-mix(in srgb, var(--interactive-accent) 16%, transparent) !important;
+  }
+}
+
+.atlas-csm-condition-delete {
+  &.btn--icon {
+    width: $button-height-s;
+    height: $button-height-s;
+  }
+
+  color: var(--text-error);
+
+  &:hover {
+    color: var(--text-error);
+    background: color-mix(in oklch, var(--background-modifier-error) 15%, transparent) !important;
+  }
+}
+
+// ── Empty state ────────────────────────────────────────────────────────────
+.atlas-csm-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xl;
+  color: var(--text-faint);
+  font-size: $font-ui-small;
+  font-style: italic;
+}
+
+.atlas-collection-settings-release {
+  color: var(--text-muted);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-normal;
+}
+
+// ── Loot notes ─────────────────────────────────────────────────────────────
+.atlas-csm-loot-bases {
+  @include atlas-flex-col($spacing-l);
+}
+
+.atlas-csm-loot-list {
+  @include atlas-flex-col($spacing-xs);
+}
+
+.atlas-csm-loot-base {
+  @include atlas-inset-surface;
+  @include atlas-flex-row($gap: $spacing-s);
+  padding: $spacing-s;
+  min-width: 0;
+}
+
+.atlas-csm-loot-base-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+
+  svg {
+    width: $icon-s;
+    height: $icon-s;
+  }
+}
+
+.atlas-csm-loot-base-text {
+  @include atlas-flex-col(0);
+  flex: 1;
+  min-width: 0;
+}
+
+.atlas-csm-loot-base-name,
+.atlas-csm-loot-base-path {
+  @include atlas-truncate;
+}
+
+.atlas-csm-loot-base-name {
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  color: var(--text-normal);
+}
+
+.atlas-csm-loot-base-path {
+  font-size: $font-ui-smaller;
+  color: var(--text-faint);
+}
+
+.atlas-csm-loot-base-summary {
+  flex-shrink: 0;
+  font-size: $font-ui-smaller;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.atlas-csm-loot-base--problem :is(.atlas-csm-loot-base-icon, .atlas-csm-loot-base-summary) {
+  color: var(--text-warning);
+}
+
+.atlas-csm-loot-picker {
+  @include atlas-inset-surface;
+  @include atlas-flex-col($spacing-xs);
+  height: 320px;
+  padding-bottom: $spacing-s;
+
+  .atlas-linked-note-picker {
+    padding-bottom: 0;
+  }
+
+  .atlas-csm-add-btn {
+    margin-inline-start: $spacing-m;
+  }
+}

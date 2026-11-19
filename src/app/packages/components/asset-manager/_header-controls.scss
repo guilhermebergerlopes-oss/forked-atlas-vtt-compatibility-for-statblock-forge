@@ -1,0 +1,297 @@
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+@use 'variables' as *;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Asset Manager – Header controls: asset type, search, create
+// ═══════════════════════════════════════════════════════════════════════════
+// Each control has a wide and a compact form; the toolbar's `data-compact`
+// steps show one of them (see `_header.scss`).
+
+// ── Asset type ──────────────────────────────────────────────────────────────
+
+.atlas-asset-manager-tabs {
+  @include atlas-tab-switcher;
+
+  .atlas-tab-button {
+    @include atlas-tab-button;
+
+    // The Armarium's tab is its icon alone: square, as tall as the tabs beside it.
+    &.atlas-tab-button--icon {
+      justify-content: center;
+      aspect-ratio: 1;
+      padding: 0;
+
+      // Alone, the icon takes the size of the header's other icons.
+      svg {
+        width: $icon-s;
+        height: $icon-s;
+      }
+    }
+
+    // A count is information, so it reads at AA (the shared tab mixin's is faint).
+    .atlas-tab-count {
+      min-width: 2ch;
+      text-align: left;
+      color: var(--text-muted);
+    }
+  }
+
+  // The Armarium is a place beside the library, not an asset type: a hairline sets it apart from the tabs before it.
+  .atlas-tab-divider {
+    flex-shrink: 0;
+    width: $border-width-s;
+    height: $icon-s;
+    margin-inline: $spacing-xs;
+    background-color: var(--background-modifier-border);
+  }
+}
+
+// The current type as a menu button, shaped like the tab switcher it replaces.
+.atlas-am-tab-menu {
+  display: none;
+}
+
+.atlas-am-tab-menu-trigger {
+  &.btn {
+    gap: $spacing-xs;
+    height: $header-control-height;
+    padding: 0 $spacing-s 0 $spacing-m;
+    border-radius: $radius-m;
+    background: var(--background-secondary);
+    box-shadow: none;
+    color: var(--text-normal);
+    font-size: $font-ui-small;
+    font-weight: $font-weight-medium;
+    transition: background-color $transition-fast $transition-ease,
+                transform $transition-press $transition-ease-out;
+  }
+
+  &:hover {
+    background: var(--background-modifier-hover);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  .atlas-tab-label {
+    @include atlas-truncate;
+  }
+
+  .atlas-tab-count {
+    color: var(--text-muted);
+    font-size: $font-ui-smaller;
+    font-weight: $font-weight-normal;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .atlas-am-tab-menu-chevron {
+    width: $icon-xs;
+    height: $icon-xs;
+    color: var(--text-faint);
+    transition: transform $transition-normal $transition-ease-out;
+  }
+
+  &.atlas-active .atlas-am-tab-menu-chevron {
+    transform: rotate(180deg);
+  }
+}
+
+.atlas-am-toolbar[data-compact~='tabs'] {
+  .atlas-asset-manager-tabs {
+    display: none;
+  }
+
+  .atlas-am-tab-menu {
+    display: block;
+  }
+}
+
+// ── Search ──────────────────────────────────────────────────────────────────
+
+.atlas-am-search {
+  display: contents;
+}
+
+.atlas-am-search .atlas-am-search-toggle {
+  display: none;
+}
+
+.atlas-asset-manager-search {
+  // Anchors the suggestions; narrow headers make the field an absolute overlay instead.
+  position: relative;
+  @include atlas-flex-row($gap: $spacing-xs);
+  // The same on every tab: room for typed filters and the filter button. Its
+  // width is the toolbar's track (`_header.scss`), which narrows before the
+  // asset type tabs give up their room.
+  height: $header-control-height;
+  // The buttons at its end sit $spacing-xs from the border above, below and beside them.
+  padding: 0 $spacing-xs 0 $spacing-s;
+  background: var(--background-modifier-form-field);
+  border: $border-width-s solid $am-control-border;
+  border-radius: $radius-m;
+  transition: border-color $transition-fast $transition-ease;
+
+  &:focus-within {
+    border-color: $am-control-border-focus;
+  }
+
+  > svg {
+    width: $icon-s;
+    height: $icon-s;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  input {
+    flex: 1;
+    width: 0;
+    min-width: 0;
+    height: 100%;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    padding: 0;
+    color: var(--text-normal);
+    font-size: $font-ui-small;
+
+    &::placeholder {
+      color: var(--text-faint);
+    }
+  }
+
+  // The face fills what the field's height leaves inside that inset; a hit area around a face smaller than 24 px
+  // gives the smallest target WCAG 2.2 accepts.
+  .atlas-am-icon-btn {
+    &.btn,
+    &.btn--icon {
+      $face: calc(#{$header-control-height} - 2 * (#{$border-width-s} + #{$spacing-xs}));
+      position: relative;
+      width: $face;
+      height: $face;
+      flex-shrink: 0;
+      border-radius: $search-field-button-radius;
+
+      &::before {
+        position: absolute;
+        inset: min(0px, calc((100% - #{$search-button-size}) / 2));
+        content: '';
+      }
+    }
+
+    svg {
+      width: $icon-xs;
+      height: $icon-xs;
+    }
+  }
+}
+
+// Compact: a button; the field opens over the whole toolbar row while it has
+// focus. Kept rendered (not display: none) so it can take focus.
+.atlas-am-toolbar[data-compact~='search'] {
+  .atlas-am-search .atlas-am-search-toggle {
+    display: flex;
+
+    // A search is active: accent the button so the filter is not forgotten.
+    &.btn.atlas-active {
+      color: var(--text-accent);
+      background: color-mix(in oklch, var(--interactive-accent) 14%, transparent);
+    }
+  }
+
+  .atlas-asset-manager-search {
+    position: absolute;
+    top: $spacing-m;
+    left: $spacing-m;
+    right: $spacing-m;
+    z-index: 2;
+    width: auto;
+    // Covers the controls of the row around the field as well.
+    box-shadow: 0 0 0 $spacing-m var(--background-primary);
+    opacity: 0;
+    transform: scale(0.98);
+    pointer-events: none;
+    transition: opacity 150ms $transition-ease-out, transform 150ms $transition-ease-out,
+                border-color $transition-fast $transition-ease;
+
+    &:focus-within {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+  }
+}
+
+// The fit tries the roomier steps first (`useHeaderCompaction`), which shows the
+// field in the row for a moment that is never painted. Without this it would
+// fade out from there over the whole row on every render.
+.atlas-am-toolbar[data-fitting] .atlas-asset-manager-search {
+  transition: none;
+}
+
+// ── Create ──────────────────────────────────────────────────────────────────
+
+.atlas-asset-manager-create-btn {
+  &.btn,
+  &.btn--icon {
+    width: $header-control-height;
+    height: $header-control-height;
+    border-radius: $radius-m;
+    @include atlas-concentric-corner(top-right, $window-radius, $window-corner-inset);
+    flex-shrink: 0;
+  }
+
+  transition: transform $transition-press $transition-ease-out;
+
+  svg {
+    width: $icon-s;
+    height: $icon-s;
+    transition: transform $transition-normal $transition-ease-in-out;
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  &.atlas-active svg {
+    transform: rotate(45deg);
+  }
+}
+
+// ── Armarium ────────────────────────────────────────────────────────────────
+// While the store is shown its Reload and Open in browser stand where the search and Create do, ghost buttons of
+// Create's size; the last one takes the window's corner as Create does.
+
+.atlas-am-toolbar-right--armarium {
+  grid-template-columns: none;
+}
+
+.atlas-am-armarium-actions {
+  @include atlas-flex-row($gap: $spacing-xs);
+}
+
+.atlas-am-header-action {
+  &.btn,
+  &.btn--icon {
+    width: $header-control-height;
+    height: $header-control-height;
+    flex-shrink: 0;
+    border-radius: $radius-m;
+    color: var(--text-muted);
+  }
+
+  // Each button is followed by its tooltip's hidden label.
+  &:last-of-type {
+    &.btn,
+    &.btn--icon {
+      @include atlas-concentric-corner(top-right, $window-radius, $window-corner-inset);
+    }
+  }
+
+  svg {
+    width: $icon-s;
+    height: $icon-s;
+  }
+}

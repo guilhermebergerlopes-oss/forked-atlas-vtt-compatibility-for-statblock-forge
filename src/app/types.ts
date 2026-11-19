@@ -1,0 +1,247 @@
+// types.ts
+// Shared interfaces and types for Atlas VTT
+
+import type { SideId } from './types/initiativeRulesTypes';
+import type { LightEmission, TokenVision } from './types/lightingTypes';
+import type { OnOneLevel } from './types/sceneLevelTypes';
+
+/**
+ * Note pin object that links to an Obsidian note
+ */
+export interface NotePin extends OnOneLevel {
+  id: string;
+  kind: 'pin';
+  x: number;
+  y: number;
+  notePath: string;
+  icon?: string; // Optional icon for customized pins
+  label?: string; // Auto-assigned sequence label shown by 'number' / 'letter' pins
+  /** The pin's name as the GM wrote it; unset names it by its note (`pinName`). */
+  name?: string;
+  /** The name shows under the pin on the map, and to players who are shown the pin. */
+  showName?: true;
+  gmOnly?: boolean; // Whether the pin is only visible to the GM
+  /** Links the note to the grid cell containing (x, y) instead of marking a point; hex grids show that hex, other grids a pin. */
+  hex?: boolean;
+  /** Players may read the linked note (or the heading it names) once they find the pin on the map. */
+  readable?: true;
+  /**
+   * The level of the linked scene the pin opens (a scene link only); unset opens the scene as it
+   * opens, on the level its tab last showed. Read with `pinSceneLevel`: a level the scene no longer
+   * has opens the first.
+   */
+  sceneLevel?: string;
+}
+
+/** A bounded resource value saved on an individual map token. */
+export interface TokenResourceValue {
+  current: number;
+  max: number;
+}
+
+/** Base interface for any token entity. */
+export interface BaseToken extends OnOneLevel {
+  /**
+   * Height above its level's floor in game units: a flier, or below 0 a swimmer or a creature in a
+   * pit. Unset stands on the floor. Read with `tokenHeight`; `undefined` clears it when patched.
+   */
+  elevation?: number | undefined;
+  /**
+   * How far the token moves in one move, in game units, set by hand. Unset follows its statblock;
+   * read with `tokenSpeed`. `undefined` clears it when patched.
+   */
+  speed?: number | undefined;
+  /**
+   * Which of the speeds its statblock states the token moves by, by the speed's name ("fly");
+   * unset is the first. Read with `tokenSpeed`; `undefined` clears it when patched.
+   */
+  speedKind?: string | undefined;
+  /** False preserves the whole artwork without an Atlas frame. Defaults to true. */
+  showRing?: boolean;
+  /** Expendable resources by definition key; see `src/app/resources/`. */
+  resources?: Record<string, TokenResourceValue>;
+  /** Resource keys whose maximum was set by hand and no longer follows the statblock. */
+  overriddenMax?: string[];
+  id: string;
+  x: number;
+  y: number;
+  imagePath: string;
+  /** The library token it was placed from (`libraryTokenOf`); unset on tokens placed before tokens carried it. */
+  assetId?: string;
+  tags?: string[];
+  /** Hex colour for the Atlas ring; undefined uses white. */
+  ringColor?: string;
+  /** Active condition IDs referencing ConditionDefinition.id from collection settings */
+  conditions?: string[];
+  /** Numbers of active valued conditions, by condition id; a valued condition without one has 1. */
+  conditionValues?: Record<string, number>;
+  /** Whether the token is hidden (visible to DM but not players) */
+  isHidden?: boolean;
+  /**
+   * The side the token fights on where initiative runs by sides: `players`, `opponents` or the id of
+   * a side the collection named. Read with `sideOf`: unset or unknown, a token that sees is the players'.
+   */
+  side?: SideId;
+  /** How the token sees when the scene has dynamic lighting. */
+  vision?: TokenVision;
+  /** Light the token carries; it moves with the token. */
+  light?: LightEmission;
+  /** Whether to show the nameplate (defaults to false) */
+  showNameplate?: boolean;
+  /** Rotation in degrees (0-360) */
+  rotation?: number;
+  /** Token size in logical cells (default 1: 1=1x1, 1.5=2x2, 2=3x3, 2.5=4x4, 3=5x5, etc.) */
+  size?: number;
+  /** Layer for z-ordering (higher values appear on top) */
+  layer?: number;
+  /** Instance number for distinguishing multiple tokens of the same type (same imagePath) */
+  instanceNumber?: number;
+  /**
+   * A combatant kept beside the map (`tokens/offMap.ts`): in the scene and the initiative tracker,
+   * never drawn, seen, lit or shared on the map. Its place lies left of the map image, where an
+   * older version, which draws it, shows it off to the side. `undefined` clears it when patched.
+   */
+  offMap?: true | undefined;
+}
+
+/**
+ * Simple token without character data
+ */
+export interface Token extends BaseToken {
+  kind: 'token';
+}
+
+/**
+ * Character with a name and optional note and statblock links
+ */
+export interface Character extends BaseToken {
+  kind: 'character';
+  name: string;
+  difficulty?: string; // CR or tier from statblock
+  notePath?: string;
+  statblockPath?: string; // Path to linked statblock note
+  /** Name read from the linked statblock; the nameplate falls back to it when `name` is empty. */
+  statblockName?: string | null;
+  /** The GM manually chose this token's name; statblock refreshes must not replace it. */
+  statblockNameOverridden?: true | undefined;
+}
+
+/**
+ * Union of token entities
+ */
+export type TokenEntity = Token | Character;
+
+/**
+ * Everything about a token except its identity and map position.
+ * Saved with encounters so spawning reproduces the exact token state.
+ */
+export type TokenStateSnapshot = Omit<TokenEntity, 'id' | 'x' | 'y' | 'instanceNumber' | 'offMap'>;
+
+/**
+ * Text element object for map annotations
+ */
+export interface TextElement extends OnOneLevel {
+  id: string;
+  kind: 'text';
+  x: number;
+  y: number;
+  text: string;
+  fontSize: number;
+  fontFamily: string;
+  color: string;
+  backgroundColor?: string;
+  padding?: number;
+  borderRadius?: number;
+  opacity?: number;
+  /** The width its words wrap at, world pixels before `scale`; unset is a text as wide as its words. */
+  width?: number;
+  height?: number; // Auto-size if not set
+  align?: 'left' | 'center' | 'right';
+  bold?: boolean;
+  italic?: boolean;
+  /** Rotation in degrees (0-360) */
+  rotation?: number;
+  /** Text scale multiplier (default 1) */
+  scale?: number;
+  /** The halo look. `backgroundColor` set is the plate, whatever this says; neither is plain. */
+  outline?: true;
+  /** Where a wrapped text's lines break, as indexes into `text`. */
+  breaks?: number[];
+  /** Only the GM sees it. Unset: players see it. */
+  hidden?: true;
+  /** On the floor, under the grid and the tokens. Unset: above the tokens. Both are lit like the map. */
+  layer?: 'map';
+  locked?: true;
+  /** Its place in the one order of drawings and texts; unset lies under every annotation that has one above 0. */
+  order?: number;
+  /** Annotations of one group select and move as one. */
+  group?: string;
+  /** The online player who made it; unset is the GM. */
+  by?: string;
+}
+
+export interface DrawingStroke extends OnOneLevel {
+  id: string;
+  kind: 'drawing';
+  timestamp: number;
+  /**
+   * A hint for the handles; `points` is the truth. `'circle'` is the ellipse. Read drawings only
+   * through `annotationList`, which checks the hint against the points.
+   */
+  type: 'pen' | 'line' | 'rectangle' | 'circle' | 'icon';
+  /**
+   * The line a pen would have drawn. A rectangle: its four corners and the first again. An
+   * ellipse: 64 points of `c + a·cos t + b·sin t` and the first again. A line: its corners, or
+   * with `anchors` the sampled curve; closed when its last point is its first. A stamp: its centre.
+   */
+  points: Array<{ x: number; y: number }>;
+  color: string;
+  /** Line width for strokes (0: a fill without a line), footprint size for `icon` stamps */
+  width: number;
+  opacity: number;
+  /** A stamp's symbol: a pin icon's id, or one of the twelve ids stamps had before (`stampGlyph`). Only set when `type` is `'icon'`. */
+  icon?: string;
+  /** A closed outline's inside, in `color`; soft is a quarter of it. */
+  fill?: 'soft' | 'solid';
+  /** Rings cut out of the fill. */
+  holes?: Array<Array<{ x: number; y: number }>>;
+  /** A hint: this fill was made cell by cell (the Cells mode), so that mode grows it and clears it. */
+  cells?: true;
+  dash?: 'dashed' | 'dotted';
+  /** Arrowheads: at the line's end, or at both ends. */
+  ends?: 'end' | 'both';
+  /**
+   * The clicked points of a curved path, whose sampled curve is `points`: every anchor is one of
+   * `points`, in order, the first at its start and (on an open path) the last at its end.
+   */
+  anchors?: Array<{ x: number; y: number }>;
+  /** A stamp's turn, degrees. */
+  rotation?: number;
+  /** Only the GM sees it. Unset: players see it. */
+  hidden?: true;
+  /** On the floor, under the grid and the tokens. Unset: above the tokens. Both are lit like the map. */
+  layer?: 'map';
+  locked?: true;
+  /** Its place in the one order of drawings and texts; unset lies under every annotation that has one above 0. */
+  order?: number;
+  /** Annotations of one group select and move as one. */
+  group?: string;
+  /** The online player who made it; unset is the GM. */
+  by?: string;
+}
+
+export type ToolMode =
+  | 'move'
+  | 'pan'
+  | 'select'
+  | 'fog-paint'
+  | 'fog-erase'
+  | 'measure'
+  | 'pointer'
+  | 'note-pin'
+  | 'dice'
+  | 'laser-pointer'
+  | 'draw'
+  | 'audio';
+
+ 

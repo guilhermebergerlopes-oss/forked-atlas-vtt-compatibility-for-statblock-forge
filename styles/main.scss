@@ -1,0 +1,1321 @@
+/**
+ * Atlas VTT Main Styles
+ * 
+ * All styles are scoped under .atlas-vtt-plugin to prevent conflicts
+ * with Obsidian themes and other plugins.
+ */
+
+// Import tokens at the root level for use throughout
+@use './tokens' as *;
+@use './mixins' as *;
+@use '../src/app/onboarding/onboarding';
+@use '../src/app/keyboard/cheat-sheet';
+@use '../src/app/changelog/changelog';
+@use '../src/app/support/issue-report';
+@use '../src/app/online/gm/styles/dock';
+@use '../src/app/online/marks/styles/marks';
+@use '../src/app/online/tableLog/styles/table-log';
+@use './native-tooltips';
+@use './native-checkboxes';
+@use './button-press';
+@use './notices';
+// At the root, outside the plugin's namespace: its scope includes the floating layer under <body>.
+@use '../src/app/packages/components/asset-manager/open-window';
+@use './scroll-lock';
+@use './portal-host';
+// At the root too: Atlas' scroll areas are found by class, in every window and floating layer.
+@use './overlay-scrollbars';
+
+// Atlas' scroll shadow (`atlas-scroll-shadow`): always dark, lighter on the light theme's pale surfaces.
+body.theme-dark {
+  --atlas-scroll-shadow: rgb(0 0 0 / 0.45);
+}
+
+body.theme-light {
+  --atlas-scroll-shadow: rgb(0 0 0 / 0.14);
+}
+
+/*! Fonts bundled below, unmodified:
+ *  Fantaisie Artistique by George Williams, released under the SIL Open Font License by its author
+ *  (https://fontforge.org/archive/sfds/toyfonts.html).
+ *  Oxanium, Copyright 2019 The Oxanium Project Authors (https://github.com/sevmeyer/oxanium),
+ *  licensed under the SIL Open Font License, Version 1.1.
+ *  Courier Prime, Copyright 2015 The Courier Prime Project Authors
+ *  (https://github.com/quoteunquoteapps/CourierPrime), licensed under the SIL Open Font License, Version 1.1.
+ *  Licence text: https://openfontlicense.org
+ *  Credits: https://github.com/atlas-vtt/atlas-vtt/blob/main/THIRD_PARTY_NOTICES.md
+ */
+
+// Atlas' display face: the 3D dice panel's numbers (dice-roll.scss), the dashboard's wordmark
+// and the Draw tool's medieval text. At-rules stay at the root, like @property above.
+@font-face {
+  font-family: 'Atlas Fantaisie Artistique';
+  src: url('../src/app/assets/fonts/fantaisie-artistique.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+// The sci-fi face of the dice, chosen in Dice settings, and of the Draw tool's text; a variable font from 200 to 800.
+@font-face {
+  font-family: 'Atlas Oxanium';
+  src: url('../src/app/assets/fonts/oxanium.ttf') format('truetype');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+// The Draw tool's monospace text. One weight: bold and italic are the browser's own.
+@font-face {
+  font-family: 'Atlas Courier Prime';
+  src: url('../src/app/assets/fonts/courier-prime.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+// Root namespace for all Atlas VTT styles
+.atlas-vtt-plugin {
+  // Export design tokens as CSS custom properties
+  @include atlas-css-tokens;
+  @include atlas-host-layout;
+
+  // Ensure proper CSS variable inheritance
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+
+  // Reset box-sizing for all elements within Atlas VTT
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  // Shared mixins — must come before component imports
+  @import './mixins';
+
+  // Import all component styles within the namespace
+  // Using @import is still the best approach for including styles within a scoped context
+  // The deprecation warnings are just warnings and won't break functionality
+  @import '../src/app/react/components/command-palette.scss';
+  @import '../src/app/react/components/grid-settings.scss';
+  @import '../src/app/react/components/grid-alignment.scss';
+  @import '../src/app/react/components/widget-bar.scss';
+  @import '../src/app/react/components/icon-selector.scss';
+  @import '../src/app/packages/components/asset-manager/asset-manager.scss';
+  @import '../src/app/packages/components/asset-manager/token-creator/token-creator.scss';
+  @import '../src/app/packages/components/asset-manager/encounter-builder/encounter-builder.scss';
+  @import '../src/app/packages/components/dungeon-generator/dungeon-generator.scss';
+  @import '../src/app/packages/components/primitives/context-menu.scss';
+  @import '../src/app/packages/components/primitives/dropdown-menu.scss';
+  @import '../src/app/packages/components/toolbar/scene-lighting-section.scss';
+  @import '../src/app/packages/components/toolbar/tool-options-bar.scss';
+  @import '../src/app/packages/components/toolbar/fog-tool-bar.scss';
+  @import '../src/app/packages/components/toolbar/selection-bar.scss';
+  @import '../src/app/packages/components/toolbar/editor/toolbar-editor';
+  @import '../src/app/packages/components/toolbar/editor/toolbar-drag';
+  @import '../src/app/packages/components/toolbar/editor/toolbar-card';
+  @import '../src/app/packages/components/toolbar/editor/toolbar-side-bar';
+  @import '../src/app/packages/components/primitives/toggle.scss';
+  @import '../src/app/packages/components/primitives/input-modal.scss';
+  @import '../src/app/packages/components/primitives/select.scss';
+  @import '../src/app/packages/components/primitives/progress-modal.scss';
+  @import '../src/app/packages/components/primitives/progress-bar.scss';
+  @import '../src/app/packages/components/primitives/progress-status.scss';
+  @import '../src/app/packages/components/primitives/segmented-control.scss';
+  @import '../src/app/packages/components/primitives/close-button.scss';
+  @import '../src/app/react/components/dice/dice-dropdown.scss';
+  @import '../src/app/react/components/dice/dice-toast.scss';
+  @import '../src/app/react/components/dice3d/dice-roll.scss';
+  @import '../src/app/react/components/character-select-mode.scss';
+  @import '../src/app/packages/token.scss';
+    @import '../src/app/react/components/view-actions-menu.scss';
+  @import '../src/app/react/components/undo-redo-controls.scss';
+  @import '../src/app/react/components/dm-screen.scss';
+  @import '../src/app/react/components/linked-note-panel.scss';
+  @import '../src/app/react/components/dm-screen/sound/sound-pane.scss';
+  @import '../src/app/react/components/dm-screen/sound/sound-moods.scss';
+  @import '../src/app/react/components/dm-screen/sound/sound-dialog.scss';
+  @import '../src/app/react/components/dm-screen/sound/sound-consent.scss';
+  @import '../src/app/react/components/dm-screen/sound/sound-desk.scss';
+  @import '../src/app/react/components/dm-screen/sound/sound-music.scss';
+  @import '../src/app/react/components/dm-screen/sound/sound-strips.scss';
+  @import '../src/app/react/components/dm-screen/sound/sound-knob.scss';
+  @import '../src/app/react/components/dm-screen/sound/library/library.scss';
+  @import '../src/app/react/components/dm-screen/sound/library/library-head.scss';
+  @import '../src/app/react/components/dm-screen/sound/library/library-rows.scss';
+  @import '../src/app/react/components/dm-screen/sound/library/library-converting.scss';
+  @import '../src/app/react/components/dm-screen/sound/library/library-narrow.scss';
+  @import '../src/app/react/components/player-dashboard.scss';
+  @import '../src/app/react/components/dashboard/dashboard.scss';
+  @import '../src/app/react/components/dashboard/dashboard-cards.scss';
+  @import '../src/app/react/components/dashboard/continue-hero.scss';
+  @import '../src/app/react/components/dashboard/campaigns.scss';
+  @import '../src/app/react/components/dashboard/campaign-page.scss';
+  @import '../src/app/react/components/dashboard/campaign-fields.scss';
+  @import '../src/app/react/components/dashboard/world-map-card.scss';
+  @import '../src/app/react/components/dashboard/world-map-picker.scss';
+  @import '../src/app/react/components/dashboard/quests/quests.scss';
+  @import '../src/app/react/components/dice-log/dice-roll-log.scss';
+  @import '../src/app/react/components/dice/rolled-dice.scss';
+  @import '../src/app/react/components/loot/loot-roller.scss';
+  @import '../src/app/react/components/siteFrame/site-frame.scss';
+  @import '../src/app/armarium/armarium-pane.scss';
+  @import '../src/app/armarium/share/share-dialog.scss';
+  @import '../src/app/react/components/documentation/docs-panel.scss';
+  @import '../src/app/pixi/lighting/light-panel.scss';
+  @import '../src/app/pixi/lighting/light-popover.scss';
+  @import '../src/app/react/components/loot/loot-source-tree.scss';
+  @import '../src/app/react/components/loot/loot-roll-bar.scss';
+  @import '../src/app/react/components/loot/loot-lists.scss';
+  @import '../src/app/react/components/loot/loot-card.scss';
+  @import '../src/app/react/components/loot/player-loot.scss';
+  @import '../src/app/react/components/randomTables/random-tables.scss';
+  @import '../src/app/react/components/randomTables/table-result-card.scss';
+  @import '../src/app/react/components/randomTables/paste-table-dialog.scss';
+  @import '../src/app/react/components/randomTables/file-table-import.scss';
+  @import '../src/app/packages/components/asset-manager/tag-search-modal.scss';
+  @import '../src/app/pixi/token-renderer/edit-token-modal.scss';
+  @import '../src/app/react/components/collection-settings-modal.scss';
+  @import '../src/app/react/components/collection-settings/system-tab.scss';
+  @import '../src/app/react/components/collection-settings/creature-filters-tab.scss';
+  @import '../src/app/react/components/collection-settings/conditions-tab.scss';
+  @import '../src/app/react/components/collection-settings/vision-tab.scss';
+  @import '../src/app/react/components/senses/senses-editor.scss';
+  @import '../src/app/react/components/collection-settings/fan/radial-fan.scss';
+  @import '../src/app/react/components/collection-settings/resources-tab.scss';
+  @import '../src/app/statblocks/editor/rests/recovery-pane.scss';
+  @import '../src/app/statblocks/editor/rests/recovery-stage.scss';
+  @import '../src/app/statblocks/editor/rests/recovery-scopes.scss';
+  @import '../src/app/statblocks/editor/rests/recovery-card.scss';
+  @import '../src/app/react/components/collection-settings/random-tables/random-tables-tab.scss';
+  @import '../src/app/react/components/collection-settings/random-tables/item-rarities.scss';
+  @import '../src/app/react/components/collection-settings/statblock-field-chips.scss';
+  @import '../src/app/react/components/collection-settings/setting-row.scss';
+  @import '../src/app/react/components/collection-settings/movement-rules.scss';
+  @import '../src/app/react/components/collection-settings/dice-lab/dice-lab.scss';
+  @import '../src/app/react/components/collection-settings/dice-lab/dice-lab-options.scss';
+  @import '../src/app/react/components/collection-settings/dice-lab/dice-tray.scss';
+  @import '../src/app/react/components/collection-settings/dice-lab/dice-set-picker.scss';
+  @import '../src/app/react/components/collection-settings/dice-lab/dice-step.scss';
+  @import '../src/app/services/note-preview-window.scss';
+  @import '../src/app/services/embedded-leaf.scss';
+  @import '../src/app/react/components/atlas-toast.scss';
+  @import '../src/app/ui/text-input-dialog.scss';
+  @import '../src/app/pixi/annotations/text-field.scss';
+  @import '../src/app/packages/components/shared/DiceTextInput';
+
+
+  // UI container styles
+  .atlas-vtt-ui {
+    border-radius: $radius-m;
+  }
+
+  // Popover under a selected token's HP/stress bar; mounted in Atlas' host under document.body
+  &.atlas-token-value-editor {
+    @include atlas-elevated-surface;
+    position: fixed;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: $spacing-xs;
+    padding: $spacing-xs;
+    z-index: var(--layer-popover, 1000);
+    font-size: $font-ui-small;
+    color: var(--text-normal);
+  }
+
+  .atlas-token-value-editor__input {
+    @include atlas-text-input;
+    width: 56px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+
+    &[aria-invalid] {
+      border-color: var(--text-error);
+      box-shadow: 0 0 0 2px color-mix(in oklch, var(--text-error) 30%, transparent);
+    }
+  }
+
+  .atlas-token-value-editor__separator,
+  .atlas-token-value-editor__label {
+    color: var(--text-muted);
+  }
+
+  // The fields stand in the popover's corners; a label before them starts on the menus' text edge, $spacing-m inside its padding.
+  .atlas-token-value-editor__label {
+    padding-inline-start: $spacing-m;
+    white-space: nowrap;
+  }
+
+  // A change typed for a selection may be a sum (`-9/2`), wider than a value
+  .atlas-token-value-editor__input--wide {
+    width: 96px;
+  }
+
+  // Scene tabs and widgets share one row so they can never overlap:
+  // the tab strip shrinks and scrolls, the widget bar keeps its width.
+  //
+  // The row is no layer of its own (absolute and without a z-index, where a
+  // fixed element always is one): its bars stand at 100, below the map's
+  // overlays such as the DM screen.
+  .atlas-top-bar-row {
+    position: absolute;
+    top: $spacing-s;
+    left: $spacing-s;
+    right: $spacing-s;
+    display: flex;
+    align-items: flex-start;
+    gap: $spacing-s;
+    pointer-events: none;
+
+    > :not(.atlas-top-bar-end) {
+      z-index: 100;
+    }
+
+    // The left end holds the scene tabs and, directly below them, what hangs
+    // from them: online play's unread table log, which TableLogMount puts in
+    // `__below`. The end sizes and shrinks as the tab bar alone did; what hangs
+    // below the tabs takes no room in the row, as the dice rolls at the right
+    // end, and stays clear of the levels switch at the left edge. Without tabs
+    // it stands in their place, in the row, so the widgets keep clear of it.
+    > .atlas-top-bar-start {
+      position: relative;
+      flex: 0 1 auto;
+      min-width: 0;
+      display: flex;
+
+      // Only the tab bar gives way: what stands in its place never does.
+      &:not(:has(> .atlas-scene-tab-bar)) {
+        flex-shrink: 0;
+      }
+
+      // A menu or TrueScale's panel open from the player window bar stands over the level
+      // switcher and the toolbar row, as their menus do
+      &:has(.atlas-player-window-bar .atlas-dropdown-content) {
+        z-index: $z-atlas-dropdown;
+      }
+    }
+
+    .atlas-top-bar-start__below {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: $spacing-s;
+    }
+
+    .atlas-scene-tab-bar + .atlas-top-bar-start__below {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: $spacing-s;
+    }
+
+    // The right end holds the widget bar and the mark the DM's dice rolls are
+    // placed by: they stand in its top right corner, over the widgets, in front
+    // of everything (dice-roll.scss). Without widgets it is empty and the rolls
+    // start at the top, as far from the top edge as from the right. When tabs and widgets
+    // do not fit side by side the tabs scroll and the widgets stack
+    // (useWidgetStack), so the widgets never give way themselves.
+    > .atlas-top-bar-end {
+      position: relative;
+      flex: none;
+      max-width: 100%;
+      margin-left: auto;
+
+      // The row positions the widget bar here; its fixed placement in
+      // widget-bar.scss is for the player window.
+      // flow-root keeps the rows' negative margin (below) inside it.
+      > .atlas-widget-bar {
+        position: relative;
+        top: auto;
+        right: auto;
+        z-index: 100;
+        display: flow-root;
+      }
+
+      // Rows that would reach past half the view scroll instead. The padding
+      // is room for the cards' shadows, taken back by the margin, so the cards
+      // stand where they would without it. A scroller clips its shadows at the
+      // padding, and `--shadow-l` reaches 120px down and 90px aside (Obsidian's
+      // `0 30px 90px`), so below and to either side get all of it (the right
+      // too, since the bar slides away from the edge to clear the window's
+      // buttons); above, the view's edge is closer than that anyway. The rows scroll by wheel and
+      // touch without a scrollbar, not even the overlay one: it would stand at
+      // the edge of the shadows' room, far from the cards.
+      > .atlas-widget-bar > .atlas-widget-container {
+        $shadow-room: 120px;
+
+        max-height: 50vh;
+        overflow: hidden auto;
+        overscroll-behavior: contain;
+        @include atlas-scrollbar-none;
+        padding: $spacing-xl $shadow-room $shadow-room;
+        margin: (-$spacing-xl) (-$shadow-room) (-$shadow-room);
+      }
+
+      // A copy of the bar, in one row, that useWidgetStack measures.
+      > .atlas-widget-bar--measuring {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: max-content;
+        max-width: none;
+        visibility: hidden;
+      }
+
+      // Stacked: the widget used last on top, two more showing their edges below
+      // it, and the rest under them unseen (`data-stack-depth`, useWidgetStack); the bar keeps room for those edges, so
+      // the dice rolls hang below them. A pointer over the stack fans them.
+      $stack-step: 5px;
+
+      > .atlas-widget-bar[data-stack='closed'] > .atlas-widget-container {
+        display: grid;
+        justify-items: end;
+        align-items: start;
+        max-height: none;
+        overflow: visible;
+        padding: 0 0 (2 * $stack-step);
+        margin: 0;
+
+        > .atlas-widget {
+          grid-area: 1 / 1;
+          opacity: 0;
+          transform: translateY(2 * $stack-step);
+          transform-origin: top right;
+
+          &[data-stack-depth='0'] {
+            z-index: 3;
+            opacity: 1;
+            transform: none;
+          }
+
+          &[data-stack-depth='1'] {
+            z-index: 2;
+            opacity: 1;
+            transform: translateY($stack-step) rotate(-1.6deg);
+          }
+
+          &[data-stack-depth='2'] {
+            z-index: 1;
+            opacity: 1;
+            transform: translateY(2 * $stack-step) rotate(1.2deg);
+          }
+
+          // A timer that ran out comes to the top by itself.
+          &.timer-expired {
+            z-index: 4;
+            opacity: 1;
+            transform: none;
+          }
+        }
+      }
+
+      > .atlas-widget-bar[data-stack='closed']:has(.atlas-widget-stack-opener:hover) > .atlas-widget-container > .atlas-widget {
+        &[data-stack-depth='1'] {
+          transform: translateY(2 * $stack-step) rotate(-3.5deg);
+        }
+
+        &[data-stack-depth='2'] {
+          transform: translateY(4 * $stack-step) rotate(2.6deg);
+        }
+      }
+
+      // Spread: right-aligned rows from the corner, over everything, for the moment the GM
+      // looks; the bar keeps the stack's size, so nothing else moves.
+      > .atlas-widget-bar[data-stack='open'] > .atlas-widget-container {
+        position: absolute;
+        top: 0;
+        right: 0;
+        box-sizing: content-box;
+        width: max-content;
+        max-width: var(--atlas-widget-room);
+        outline: none;
+      }
+    }
+  }
+
+  // The main toolbar sits centred on the view, undo/redo docked to its left and
+  // the view actions at the right edge. The side columns share the free space
+  // equally, so the toolbar stays centred while they fit; once the undo/redo
+  // column needs more than its half, the toolbar slides right. BottomToolbarRow
+  // tells the toolbar the width of its column, and MainToolbar moves controls
+  // into its overflow menu when they do not fit.
+  .atlas-bottom-toolbar-row {
+    position: fixed;
+    // As far from the view's edges as the top bar row
+    bottom: $spacing-s;
+    left: $spacing-s;
+    right: $spacing-s;
+    display: grid;
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+    align-items: end;
+    column-gap: $spacing-s;
+    z-index: $z-dropdown;
+    pointer-events: none;
+
+    > .atlas-vtt-toolbar {
+      grid-area: 1 / 2;
+    }
+  }
+
+  .atlas-bottom-toolbar-row__start,
+  .atlas-bottom-toolbar-row__end {
+    grid-row: 1;
+    justify-self: end;
+    display: flex;
+  }
+
+  // The active tool's own bars, from the toolbar's left edge (absolute, so the row's
+  // lines are named: an absolute grid child's auto line is the row's edge). The turn banner
+  // stands clear of them (`--atlas-toolbar-lift`, BottomToolbarRow); the toolbar's menus and
+  // the dice tray open in their own place, over the bars, so the bars lie below the toolbar
+  // and everything that hangs from it. One cell holds them all: the bars of the tool that was
+  // left fade where the next tool's rise, so those never start beside the ones leaving.
+  .atlas-bottom-toolbar-row__options {
+    position: absolute;
+    z-index: -1;
+    // From the toolbar's left edge to the row's right edge. Bars that need more room than that (a
+    // narrow view) lie in a track wider than the slot, which ends at the slot's end: they move
+    // left by what they lack and stay in the view.
+    grid-area: 1 / 2 / 2 / 4;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    justify-content: end;
+    justify-items: start;
+    padding-bottom: $spacing-s;
+    pointer-events: none;
+
+    > * {
+      grid-area: 1 / 1;
+    }
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  .atlas-bottom-toolbar-row__start {
+    grid-column: 1;
+  }
+
+  // Online play's button at the row's left edge, over the start slot's cell; the start slot keeps
+  // room for it (`OnlinePlayRoom`), so the two never overlap.
+  .atlas-bottom-toolbar-row__lead {
+    grid-row: 1;
+    grid-column: 1;
+    justify-self: start;
+    display: flex;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  // The view actions and the keyboard shortcuts bar, which keeps the bottom right corner.
+  .atlas-bottom-toolbar-row__end {
+    grid-column: 3;
+    align-items: center;
+    gap: $spacing-s;
+  }
+
+  // Main toolbar and undo/redo bar - uses elevated surface pattern
+  .atlas-vtt-toolbar {
+    display: flex;
+    align-items: center;
+    gap: $surface-inset;
+    padding: $surface-inset;
+    pointer-events: auto;
+    @include atlas-elevated-surface;
+    @include atlas-panel-radius($surface-radius);
+
+    // Every control sits $surface-inset inside the border, so all its corners run concentric with
+    // the bar's: rounded alike on every side, never one radius towards the bar's edge and another
+    // inside it. Tool buttons, tool groups and their chevrons read this (the switch keeps its own); a bar with
+    // another inset sets it anew.
+    --atlas-bar-control-radius: #{atlas-panel-inset-radius-value($surface-inset)};
+
+    // Menus opened from a control are not part of the bar's outline.
+    .atlas-dropdown-content {
+      --atlas-bar-control-radius: initial;
+    }
+
+    .atlas-tool-button > span > .btn {
+      border-radius: var(--atlas-bar-control-radius, #{$radius-m});
+    }
+  }
+
+  // The main toolbar alone: the undo/redo bar shares `.atlas-vtt-toolbar`. The toolbar editor's
+  // handles lie inside its items, and while the editor is open its stroke takes the accent.
+  .atlas-main-toolbar {
+    position: relative;
+    transition: border-color $transition-normal $transition-ease;
+
+    &.is-editing {
+      @include atlas-elevated-surface(editing);
+    }
+
+    > .atlas-toolbar-item {
+      position: relative;
+    }
+  }
+
+  // One control of the main toolbar; hidden while it is in the overflow menu.
+  // The end control (GM view switch) never is.
+  .atlas-toolbar-item,
+  .atlas-toolbar-end,
+  .atlas-toolbar-item__content {
+    display: flex;
+    align-items: center;
+
+    &[hidden] {
+      display: none;
+    }
+  }
+
+  // Keeps its own width while its slot opens or closes around it.
+  .atlas-toolbar-item__content {
+    flex-shrink: 0;
+  }
+
+  // "More tools": the menu opens above the button, flush with its right edge.
+  .atlas-toolbar-overflow {
+    position: relative;
+    display: flex;
+    align-items: center;
+
+    // Shows the menu as open, or as where a dragged tool would land (the toolbar editor); it has to
+    // outrank the `!important` that makes every toolbar button transparent
+    .atlas-tool-button button.btn[aria-expanded="true"],
+    &[data-drop-target] .atlas-tool-button button.btn {
+      background: var(--background-modifier-hover) !important;
+    }
+  }
+} // End of .atlas-vtt-plugin block
+
+// Note: Obsidian UI styling removed - using default backgrounds
+
+.atlas-vtt-plugin {
+  /* Ensure dropdown menu has the same radius as its content */
+  .atlas-dropdown-menu {
+    border-radius: $surface-radius !important;
+  }
+
+  /* Note pin dropdown styles moved to top-level .atlas-note-pin-dropdown block */
+
+  /* Pin overlay styles - REPLACED WITH PIXI-BASED PIN RENDERER */
+  // .atlas-pin-icon styles removed - now rendered in PIXI
+
+  /* Map picker modal styles */
+  .atlas-map-picker-list {
+    margin-top: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .atlas-map-picker-item {
+    padding: 0.5rem 1rem;
+    margin: 0.25rem 0;
+    border-radius: $radius-s;
+    cursor: pointer;
+    
+    &:hover {
+      background-color: var(--background-modifier-hover);
+    }
+  }
+
+  // Buttons in the toolbar's menus that keep their own look: the dice tray's Roll and Clear,
+  // the options of a segmented control, which is filled where it is chosen, and the editor tray's Done.
+  $own-look: '.atlas-dice-tray *, .atlas-segmented__option, .atlas-toolbar-tray__done';
+  // The bars whose buttons these rules shape: the toolbars, the toolbar editor's tray, and the
+  // ghost of a tool moving between them.
+  $toolbars: ':is(.atlas-vtt-toolbar, .atlas-toolbar-tray, .atlas-toolbar-ghost, .atlas-tool-bar)';
+
+  /* Make all buttons in toolbar transparent by default, except those with their own look.
+     None shows that it has the focus, by the pointer or by a key: a button that was clicked keeps
+     the focus, and the next hotkey would ring it beside the tool in hand. */
+  #{$toolbars} button.btn:not(#{$own-look}),
+  #{$toolbars} button.btn--toolbar {
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    transition: transform $transition-press $transition-ease-out,
+                background-color $transition-fast $transition-ease,
+                color $transition-fast $transition-ease;
+
+    &:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+  }
+
+  // Nor does a switch or a segmented option of a toolbar, or of a menu that hangs from one: a
+  // click leaves the focus on it and the menu open. A chosen option keeps the shadow it rests with.
+  #{$toolbars} .atlas-toggle:focus-visible {
+    outline: none;
+  }
+
+  #{$toolbars} .atlas-segmented__option:focus-visible {
+    box-shadow: none;
+
+    &.atlas-active {
+      box-shadow: $segmented-chosen-shadow;
+    }
+  }
+
+  #{$toolbars} button.btn:hover:not(#{$own-look}),
+  #{$toolbars} button.btn--toolbar:hover {
+    background: var(--background-modifier-hover) !important;
+    color: var(--text-normal) !important;
+  }
+
+  // .btn.is-active outranks the tool group's transparent reset below
+  #{$toolbars} button.btn.is-active {
+    background: var(--interactive-accent) !important;
+    color: var(--text-on-accent) !important;
+
+    &:hover {
+      background: var(--interactive-accent-hover) !important;
+      color: var(--text-on-accent) !important;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #{$toolbars} button.btn:active {
+      transform: none;
+    }
+  }
+
+  // ToolButton layout (icon button + optional chevron)
+  .atlas-tool-button {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .atlas-tool-button-chevron svg {
+    width: $icon-xs;
+    height: $icon-xs;
+  }
+
+  .atlas-tool-button--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* -------------------------------------------------
+     Tool group (tool + options chevron)
+     ------------------------------------------------- */
+  // As in Figma: the tool is a whole rounded button of its own, hovered, pressed and active like
+  // every other tool, and the chevron beside it is a separate, narrower one with its own hover.
+  // The group paints nothing; it only takes the bar's control corner (see .atlas-vtt-toolbar).
+  .atlas-tool-group {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: $spacing-xs;
+    padding: 0;
+    border-radius: var(--atlas-bar-control-radius, #{$radius-m});
+
+  }
+
+  // Muted until hovered; filled while its menu is open. Never takes the tool's accent.
+  #{$toolbars} .atlas-tool-group button.btn.atlas-tool-group__chevron {
+    width: $icon-m;
+    height: $button-height-l;
+    padding: 0;
+    color: var(--text-muted);
+    border-radius: var(--atlas-bar-control-radius, #{$radius-m}) !important;
+
+    &:hover,
+    &.atlas-is-active {
+      background: var(--background-modifier-hover) !important;
+      color: var(--text-normal) !important;
+    }
+  }
+
+  // States of the buttons in a bar's menus (tool groups, the player window bar) that the bar's
+  // button rules above would flatten
+  #{$toolbars} .atlas-dropdown-content button.btn {
+    &.atlas-dropdown-mode-btn--active {
+      background: transparent !important;
+      color: var(--interactive-accent) !important;
+      border: $border-width-s solid var(--interactive-accent) !important;
+    }
+
+    &.atlas-dropdown-btn--destructive {
+      color: var(--text-error) !important;
+
+      &:hover {
+        background: color-mix(in oklch, var(--background-modifier-error) 15%, transparent) !important;
+      }
+    }
+  }
+
+  /* -------------------------------------------------
+     Button component (using design tokens)
+     ------------------------------------------------- */
+
+  // The host of Atlas' buttons in Obsidian's settings rows (`addSettingButton`): it lends them Atlas'
+  // scope and leaves the row's layout to them.
+  &.atlas-setting-control {
+    display: contents;
+  }
+
+  // Base
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: $spacing-s;
+    white-space: nowrap;
+    height: $button-height-l;
+    padding: $spacing-s $spacing-l;
+    border-radius: $radius-m;
+    font-size: $font-ui-small;
+    font-weight: $font-weight-medium;
+    transition: color $transition-normal $transition-ease,
+                background-color $transition-normal $transition-ease;
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--background-modifier-border-focus), 0 0 0 4px var(--background-primary);
+    }
+
+    &:disabled {
+      pointer-events: none;
+      opacity: 0.5;
+    }
+
+    svg {
+      pointer-events: none;
+      width: $icon-s;
+      height: $icon-s;
+      flex-shrink: 0;
+    }
+  }
+
+  // Variants
+  .btn--default {
+    @include atlas-accent-fill;
+  }
+
+  .btn--destructive {
+    @include atlas-danger-fill;
+  }
+
+  .btn--outline {
+    border: $border-width-s solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+
+    &:hover {
+      background: var(--interactive-hover);
+      color: var(--text-normal);
+    }
+  }
+
+  .btn--secondary {
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+
+    &:hover {
+      background: var(--interactive-hover);
+    }
+  }
+
+  // No surface of its own: words on the panel until the pointer comes, then a soft fill; a firmer one while it is
+  // pressed; disabled, only its words fade.
+  .btn--ghost {
+    background: transparent;
+    color: inherit;
+    border: none;
+    box-shadow: none;
+
+    &:hover {
+      background: var(--background-modifier-hover);
+      color: var(--text-normal);
+    }
+
+    &:active:not(:disabled) {
+      background: var(--background-modifier-active-hover, color-mix(in oklch, var(--background-modifier-hover), var(--text-normal) 10%));
+    }
+
+    &:disabled {
+      background: transparent;
+    }
+  }
+
+  /* Toolbar chevron button */
+  .btn--toolbar {
+    background: transparent !important;
+    color: var(--text-muted);
+    width: $icon-m;
+    height: $input-height-m;
+    padding: 0;
+    border: none;
+    outline: none;
+
+    &:hover {
+      background: var(--background-modifier-hover) !important;
+      color: var(--text-normal);
+    }
+
+    &.is-active {
+      color: var(--text-normal);
+    }
+  }
+
+  .btn--link {
+    background: transparent;
+    color: var(--text-accent);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+
+    &:hover {
+      color: var(--text-accent-hover);
+      text-decoration: none;
+    }
+  }
+
+  // Sizes
+  .btn--sm {
+    height: var(--input-height);
+    padding: 0 $spacing-m;
+    border-radius: $radius-m;
+    font-size: $font-ui-small;
+  }
+
+  .btn--lg {
+    height: $input-height-l;
+    padding: 0 $spacing-2xl;
+  }
+
+  .btn--icon {
+    width: $button-height-l;
+    height: $button-height-l;
+    padding: 0;
+  }
+
+  .modal-button-container {
+    display: flex;
+    gap: $spacing-s;
+    justify-content: flex-end;
+    margin-top: $spacing-xl;
+  }
+}
+
+// Hide Obsidian's native view header (forward/back nav) in Atlas views
+.workspace-leaf-content[data-type="atlas-vtt"] {
+  .view-header {
+    display: none !important;
+  }
+
+  // Reclaim header space so view-content fills the leaf
+  .view-content {
+    height: 100% !important;
+  }
+}
+
+// The leaf content elements our views take over as their root
+.workspace-leaf-content.atlas-vtt-view {
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.workspace-leaf-content.atlas-dashboard-view {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+.view-content.atlas-dungeon-generator-view {
+  padding: 0;
+  overflow: hidden;
+}
+
+// The Sound page in a tab of its own. The page's rules measure the DM screen by name; here the tab is what it fills.
+.view-content.atlas-sound-view {
+  @include atlas-dm-screen-inset;
+  container: atlas-dm-screen / size;
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+
+  // No page control above it, so one inset on all four sides.
+  .atlas-sound-pane {
+    margin: var(--atlas-dm-screen-inset);
+  }
+}
+
+// Atlas VTT view styles - scoped to our plugin views only
+.workspace-leaf-content[data-type="atlas-vtt"] .atlas-vtt-view,
+.workspace-leaf-content[data-type="atlas-vtt-dashboard"] .atlas-vtt-view {
+  // Ensure the view maintains proper dimensions
+  min-width: 100%;
+  min-height: 100%;
+  overflow: hidden;
+
+  // Ensure the canvas container doesn't shrink but doesn't cover header
+  canvas {
+    min-width: 100%;
+    min-height: 100%;
+    display: block;
+  }
+}
+
+// Note: Status bar visibility is now handled programmatically in main.ts
+// This ensures proper show/hide behavior when switching between views
+
+// Header autocomplete suggestion styles - global for editor suggest
+.suggestion-item.atlas-header-suggestion {
+  .atlas-header-level {
+    display: inline-block;
+    font-size: 0.75em;
+    color: var(--text-muted);
+    margin-right: 8px;
+    font-weight: 600;
+    background: var(--background-modifier-border);
+    padding: 2px 6px;
+    border-radius: $radius-s;
+    min-width: 25px;
+    text-align: center;
+  }
+  
+  .atlas-header-text {
+    color: var(--text-normal);
+  }
+  
+  &.is-selected {
+    .atlas-header-level {
+      background: var(--interactive-accent);
+      color: var(--text-on-accent);
+    }
+  }
+}
+
+// ─── Note Pin Dropdown ─────────────────────────────────────────────
+// Popover: icon palette (src/app/tools/pin-icon-palette.scss), search, results and a hint footer. Uniform
+// padding/gap so every section sits on the same rhythm.
+//
+// Corners are concentric: the icon row spans the top, $surface-inset inside the surface with a
+// control's corner (`--pin-inset-radius`), and the row's buttons $surface-inset inside the row with
+// `$control-inset-radius` (`--pin-btn-radius`, set on the row). The results light up as rows at
+// $surface-inset too; the name switch and the search stand on the menus' text edge, $spacing-m inside the padding.
+
+.atlas-note-pin-dropdown {
+  --pin-btn-radius: #{$radius-m};
+  --pin-inset-radius: #{$radius-m};
+
+  @include atlas-elevated-surface;
+  @include atlas-panel-radius($surface-radius);
+  @include atlas-flex-col($gap: $surface-inset);
+  position: fixed;
+  z-index: $z-atlas-dropdown;
+  width: fit-content;
+  min-width: 300px;
+  padding: $surface-inset;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  font-size: $font-ui-small;
+
+  // A create entry is at work over the map (Generate dungeon): the dropdown waits unseen.
+  &.atlas-away {
+    visibility: hidden;
+  }
+
+  // ── Show name: Atlas' switch and its text, on the menus' text edge ($spacing-m inside the padding) ──
+  .pin-name-row {
+    @include atlas-flex-row($gap: $spacing-s);
+    padding: 0 $spacing-m;
+  }
+
+  .pin-name-row__text {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  // ── Search ─────────────────────────────────────────────────────
+  // Between the icon row and the results, on the text edge like the switch above it.
+  .pin-search-wrapper {
+    position: relative;
+    flex-shrink: 0;
+    margin-inline: $spacing-m;
+
+    .pin-search-icon {
+      position: absolute;
+      left: $spacing-s;
+      top: 50%;
+      width: $icon-s;
+      height: $icon-s;
+      transform: translateY(-50%);
+      color: var(--text-faint);
+      pointer-events: none;
+
+      svg {
+        width: 100%;
+        height: 100%;
+      }
+    }
+  }
+
+  .pin-search-input {
+    @include atlas-text-input;
+    padding-left: calc(#{$spacing-s} + #{$icon-s} + #{$spacing-s});
+    border-radius: $radius-m;
+  }
+
+  // ── Results ────────────────────────────────────────────────────
+  .atlas-pin-results {
+    @include atlas-flex-col($gap: $spacing-xs);
+    max-height: 240px;
+    overflow-y: auto;
+    // The icon row sets the panel's width; a long note name truncates instead of widening it
+    contain: inline-size;
+  }
+
+  .pin-result-item {
+    @include atlas-flex-row($gap: $spacing-s);
+    min-height: var(--input-height);
+    padding: $spacing-s;
+    border-radius: $radius-m;
+    cursor: pointer;
+    color: var(--text-normal);
+    transition: background-color $transition-fast $transition-ease;
+
+    // The keyboard's active result; hovering moves it, so hover needs no style of its own
+    &.is-active {
+      background: var(--background-modifier-hover);
+    }
+
+    &:active {
+      background: var(--background-modifier-active-hover);
+    }
+
+    .pin-result-icon {
+      flex-shrink: 0;
+      width: $icon-s;
+      height: $icon-s;
+      color: var(--text-muted);
+
+      svg {
+        width: 100%;
+        height: 100%;
+      }
+    }
+
+    .pin-result-name {
+      flex: 1;
+      min-width: 0;
+      @include atlas-truncate;
+    }
+
+    // A create entry's label, with the reason under it when the name cannot be used
+    .pin-result-text {
+      @include atlas-flex-col($gap: 0);
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pin-result-reason {
+      font-size: $font-ui-smaller;
+      color: var(--text-faint);
+    }
+
+    &.is-disabled {
+      cursor: default;
+      color: var(--text-muted);
+
+      &:active {
+        background: none;
+      }
+    }
+  }
+
+  // Small pill labels: map badge and heading level.
+  .pin-result-badge,
+  .pin-header-level {
+    @include atlas-flex-row($gap: 0);
+    flex-shrink: 0;
+    height: $icon-m;
+    padding: 0 $spacing-xs;
+    border-radius: $radius-s;
+    font-size: $font-ui-smaller;
+    font-weight: $font-weight-semibold;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pin-result-badge.is-map {
+    color: var(--color-green);
+    background: color-mix(in oklch, var(--color-green) 14%, transparent);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .pin-result-badge.is-encounters {
+    color: var(--color-orange);
+    background: color-mix(in oklch, var(--color-orange) 14%, transparent);
+  }
+
+  .pin-header-level {
+    color: var(--text-muted);
+    background: var(--background-modifier-hover);
+  }
+
+  // The sections around a heading: those farthest up give way first, so the nearest stays readable
+  .pin-header-trail {
+    @include atlas-flex-row($gap: 0);
+    min-width: 0;
+    font-size: $font-ui-smaller;
+    color: var(--text-faint);
+  }
+
+  .pin-header-section {
+    flex: 0 1000 auto;
+    min-width: 0;
+    @include atlas-truncate;
+
+    &:last-child {
+      flex-shrink: 1;
+    }
+  }
+
+  .pin-header-separator {
+    flex-shrink: 0;
+    white-space: pre;
+  }
+
+  .pin-header-file {
+    flex-shrink: 0;
+    max-width: 40%;
+    @include atlas-truncate;
+    font-size: $font-ui-smaller;
+    color: var(--text-faint);
+  }
+
+  .pin-empty-state {
+    padding: $spacing-m;
+    text-align: center;
+    color: var(--text-faint);
+  }
+
+  // ── Footer ─────────────────────────────────────────────────────
+  .pin-footer {
+    @include atlas-flex-row($gap: $spacing-l);
+    justify-content: center;
+    flex-shrink: 0;
+    // Words, not controls: they keep room around them inside the surface's inset.
+    padding: $spacing-s;
+    border-top: var(--divider-width) solid var(--divider-color);
+
+    .pin-footer-hint {
+      @include atlas-flex-row($gap: $spacing-xs);
+      font-size: $font-ui-smaller;
+      line-height: 1;
+      color: var(--text-muted);
+
+      kbd {
+        display: inline-flex;
+        align-items: center;
+        height: $icon-m;
+        padding: 0 $spacing-xs;
+        border-radius: $radius-s;
+        background: var(--background-modifier-hover);
+        color: var(--text-normal);
+        font-family: inherit;
+        font-size: $font-ui-smaller;
+        font-weight: $font-weight-semibold;
+        line-height: 1;
+      }
+    }
+  }
+}
+
+// Obsidian menus opened from the asset manager must stack above its overlay.
+// Limited to while the overlay is open (`useOverlayBodyClass`) so other Obsidian menus are untouched.
+body.atlas-asset-manager-open > .menu {
+  z-index: $z-atlas-dropdown;
+}
+
+// ─── Plugin shell ──────────────────────────────────────────────────
+// Rules for elements the plugin places on `document.body`, outside
+// `.atlas-vtt-plugin`.
+
+// The status bar would cover the bottom-right corner of a full-bleed Atlas view.
+body.atlas-hide-status-bar .status-bar {
+  display: none;
+}
+
+// A frameless window on Windows and Linux draws its minimise, maximise and close buttons over the top-right
+// corner of an Atlas view, where a map keeps its widgets. They fade out and come back while the pointer is over them
+// (the container keeps its pointer events, so its hover still registers). macOS has native traffic lights instead.
+body.atlas-hide-window-controls:is(.mod-windows, .mod-linux) .titlebar-button-container.mod-right {
+  opacity: 0;
+  transition: opacity $transition-normal $transition-ease;
+
+  &:hover,
+  &:focus-within {
+    opacity: 1;
+    transition-duration: $transition-fast;
+  }
+}
+
+// File picker input used by "New map from image…"; only ever clicked programmatically.
+.atlas-hidden-file-input {
+  display: none;
+}
+
+// A DOM-built panel animating out (src/app/ui/panelMotion.ts): clicks pass through it.
+.atlas-panel-leaving {
+  pointer-events: none;
+}
+
+// Held on the body while a floating window is being resized.
+body.atlas-no-select {
+  user-select: none;
+}
+
+// Off-screen input that captures typing while a token name is edited on the canvas.
+input.atlas-offscreen-input {
+  position: fixed;
+  left: -9999px;
+  top: -9999px;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  z-index: -1;
+}
+
+// Base views Atlas runs off screen to read loot (src/app/loot/lootQueryView.ts).
+.atlas-loot-query-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 400px;
+  height: 300px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+// Atlas's loot view opened in a base of one's own: a short note on what it is for.
+.atlas-loot-query-note {
+  padding: var(--size-4-4);
+  color: var(--text-muted);
+}
+
+// Throwaway element used to resolve a CSS colour to its computed value.
+.atlas-color-probe {
+  position: absolute;
+  opacity: 0;
+}

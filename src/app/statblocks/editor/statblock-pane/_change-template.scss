@@ -1,0 +1,98 @@
+// Change template… (§7.2): an Atlas dialog, the library on the left and this
+// statblock in the chosen template on the right.
+
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+@use '../../../../../styles/sidebar-dialog' as *;
+
+.atlas-vtt-plugin.atlas-sb-change-template-overlay {
+  @include atlas-modal-overlay($z-atlas-modal);
+}
+
+.atlas-vtt-plugin {
+  // A dialog with a sidebar (`_sidebar-dialog.scss`): the library runs its full height.
+  .atlas-sb-change-template {
+    @include atlas-modal-window;
+    @include atlas-sidebar-dialog($side-track: 240px);
+    width: 880px;
+    height: 600px;
+  }
+
+  .atlas-sb-change-template__header {
+    @include atlas-sidebar-dialog-header;
+  }
+
+  // Lends the library and the preview to the window's grid.
+  .atlas-sb-change-template__body {
+    display: contents;
+  }
+
+  .atlas-sb-change-template__list {
+    @include atlas-sidebar-dialog-side;
+    @include atlas-flex-col($spacing-s);
+    padding: $spacing-s;
+    overflow-y: auto;
+  }
+
+  .atlas-sb-change-template__group {
+    @include atlas-flex-col(2px);
+  }
+
+  .atlas-sb-change-template__group-heading {
+    padding: $spacing-xs $spacing-s;
+    color: var(--text-muted);
+    font-size: $font-ui-smaller;
+    font-weight: $font-weight-semibold;
+  }
+
+  .atlas-sb-change-template__option {
+    @include atlas-flex-row($spacing-s);
+    min-height: var(--input-height);
+    padding: 0 $spacing-s;
+    border-radius: $radius-m;
+    color: var(--text-normal);
+    font-size: $font-ui-small;
+    cursor: pointer;
+
+    &:hover {
+      background-color: var(--background-modifier-hover);
+    }
+
+    &[aria-selected='true'] {
+      background-color: var(--background-modifier-active-hover);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--background-modifier-border-focus);
+      outline-offset: -2px;
+    }
+  }
+
+  .atlas-sb-change-template__name {
+    @include atlas-truncate;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .atlas-sb-change-template__detail {
+    flex-shrink: 0;
+    color: var(--text-faint);
+    font-size: $font-ui-smaller;
+  }
+
+  .atlas-sb-change-template__preview {
+    @include atlas-sidebar-dialog-body;
+    @include atlas-flex-col($spacing-l);
+    padding: $spacing-l;
+  }
+
+  .atlas-sb-change-template__unshown {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: $font-ui-smaller;
+  }
+
+  .atlas-sb-change-template__footer {
+    @include atlas-sidebar-dialog-footer;
+  }
+}

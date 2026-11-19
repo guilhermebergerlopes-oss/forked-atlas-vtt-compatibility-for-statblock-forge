@@ -1,0 +1,265 @@
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo, forwardRef, useId } from "react"
+import { useAtlasStore, useViewStoreHook } from "src/app/react/ViewStoreContext"
+import { AnimatePresence, MotionConfig } from "framer-motion"
+import { createPortal } from "react-dom"
+import { useStore } from "zustand"
+import { Eye, EyeOff } from "lucide-react"
+
+import { TooltipProvider } from "./primitives/tooltip"
+import { Button } from "./primitives/button"
+import { useHotkeyLabels } from "../../keyboard/useMapHotkeys"
+import { useMapClipboardHotkeys } from "../../clipboard/useMapClipboardHotkeys"
+import { CommandPalette } from "../../react/components/CommandPalette"
+import AssetManager from "./asset-manager/AssetManager"
+import { useAtlasUI } from "src/app/react/root/AtlasUIContext"
+import { Toggle } from "./primitives/Toggle"
+import { isAtlasToolAvailable } from "../../tools/toolAvailability"
+import { availableToolbarControls, DEFAULT_TOOLBAR_ORDER, ONLINE_BAR, SIDE_BAR_IDS, type SideBarId } from "../../toolbar/toolbarCatalog"
+import { useOnlinePlayOn } from "../../react/hooks/useOnlinePlayOn"
+import { ResponsiveToolbar } from "./toolbar/ResponsiveToolbar"
+import { useToolbarHotkeys } from "./toolbar/useToolbarHotkeys"
+import { useToolbarLayout } from "./toolbar/useToolbarLayout"
+import { TOOLBAR_CONTROL_ITEMS } from "./toolbar/toolbarControls"
+import { ToolbarEditContext } from "./toolbar/editor/toolbarEditContext"
+import { ToolbarEditor } from "./toolbar/editor/ToolbarEditor"
+import { ToolbarLiveRegion } from "./toolbar/editor/ToolbarLiveRegion"
+import { createToolbarEditStore, ToolbarEditStoreContext } from "./toolbar/editor/toolbarEditStore"
+import { useToolbarRowBridge } from "./toolbar/editor/toolbarRowBridge"
+import { useToolbarEditor } from "./toolbar/editor/useToolbarEditor"
+import type { Tool } from "./toolbar/toolFaces"
+import type { ToolbarContext, ToolMenu } from "./toolbar/toolbarContext"
+import type { ResponsiveToolbarItem } from "./toolbar/toolbarTypes"
+import { t } from '../../i18n';
+import { portalHost } from '../../host/portalHost';
+
+interface MainToolbarProps {
+  viewId?: string;
+}
+
+export const MainToolbar = forwardRef<HTMLDivElement, MainToolbarProps>(({ viewId }, ref) => {
+  const activeTool = useAtlasStore(state => state.activeTool)
+  const setActiveTool = useAtlasStore(state => state.setActiveTool)
+  const measureMode = useAtlasStore(state => state.measureTool.mode)
+  const drawMode = useAtlasStore(state => state.drawTool.mode)
+  const store = useViewStoreHook()
+  const { view } = useAtlasUI()
+  const isGMView = useAtlasStore(state => state.isGMView)
+  const setGMView = useAtlasStore(state => state.setGMView)
+  const hotkeyLabel = useHotkeyLabels()
+  const gmViewName = useId()
+  const liveLayout = useToolbarLayout()
+  // During a drag the bar keeps the layout it began with; changes made elsewhere wait for the drop.
+  // The bottom row shares the drag state with the undo/redo bar, which the editor arranges too.
+  const rowBridge = useToolbarRowBridge()
+  const [ownEditStore] = useState(createToolbarEditStore)
+  const editStore = rowBridge?.editStore ?? ownEditStore
+  const frozenLayout = useStore(editStore.state, s => s.frozenLayout)
+  const layoutAccess = frozenLayout ? { ...liveLayout, layout: frozenLayout } : liveLayout
+  const { layout } = layoutAccess
+
+  const isActualPlayerView = view?.getViewType?.() === 'atlas-vtt-player'
+
+  const diceTool = useMemo(() => view?.serviceManager?.getToolController?.()?.getDiceTool?.() ?? null, [view]);
+
+  // Per-view UI visibility — driven by the store, not local state
+  const isCommandPaletteOpen = useAtlasStore(s => s.isCommandPaletteOpen)
+  const setCommandPaletteOpen = useAtlasStore(s => s.setCommandPaletteOpen)
+  const isAssetManagerOpen = useAtlasStore(s => s.isAssetManagerOpen)
+  const assetManagerInitialTab = useAtlasStore(s => s.assetManagerInitialTab)
+  const assetManagerArmarium = useAtlasStore(s => s.assetManagerArmarium)
+  const isDiceTrayOpen = useAtlasStore(s => s.isDiceTrayOpen)
+  const setDiceTrayOpen = useAtlasStore(s => s.setDiceTrayOpen)
+  const lootRollerOpen = useAtlasStore(s => s.lootRoller.open)
+  const setLootRollerOpen = useAtlasStore(s => s.setLootRollerOpen)
+  const isToolbarEditing = useAtlasStore(s => s.isToolbarEditing)
+
+  const [openMenu, setOpenMenu] = useState<ToolMenu | null>(null)
+  const closeMenus = useCallback((): void => setOpenMenu(null), [])
+
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const diceButtonRef = useRef<HTMLDivElement>(null)
+
+  const handleToolClick = useCallback((tool: Tool) => {
+    if (!isAtlasToolAvailable(tool)) {
+      return
+    }
+    setActiveTool(tool)
+    setOpenMenu(null)
+  }, [setActiveTool])
+
+  // Opening the asset manager keeps the active tool
+  const handleAssetManagerClick = useCallback(() => {
+    store.getState().openAssetManager()
+    view?.serviceManager?.getNotePreviewUIManager?.()?.suspendPreviews();
+    setOpenMenu(null)
+  }, [view, store])
+
+  const handleCloseAssetManager = useCallback(() => {
+    store.getState().closeAssetManager()
+    view?.serviceManager?.getNotePreviewUIManager?.()?.resumePreviews();
+  }, [view, store])
+
+  const handleAssetManagerToggle = useCallback(() => {
+    if (store.getState().isAssetManagerOpen) {
+      handleCloseAssetManager()
+    } else {
+      handleAssetManagerClick()
+    }
+  }, [handleCloseAssetManager, handleAssetManagerClick, store])
+
+  const toggleGMView = useCallback(() => {
+    setGMView(!isGMView)
+  }, [isGMView, setGMView])
+
+  const toggleDiceTray = useCallback(() => {
+    setDiceTrayOpen(!isDiceTrayOpen)
+    setOpenMenu(null)
+  }, [isDiceTrayOpen, setDiceTrayOpen])
+
+  useMapClipboardHotkeys(store, view, viewId);
+  useToolbarHotkeys(viewId, isActualPlayerView, {
+    selectTool: handleToolClick,
+    toggleAssetManager: handleAssetManagerToggle,
+    closeAssetManager: handleCloseAssetManager,
+    toggleGMView,
+    closeMenus,
+  })
+
+  const dm = !isActualPlayerView
+  const editing = dm && isToolbarEditing
+  // Whether the palette action that started edit mode was chosen with the keyboard.
+  const [editingByKeyboard, setEditingByKeyboard] = useState(false)
+
+  const startEditing = useCallback((byKeyboard: boolean): void => {
+    setEditingByKeyboard(byKeyboard)
+    store.getState().setToolbarEditing(true)
+  }, [store])
+  const stopEditing = useCallback((): void => store.getState().setToolbarEditing(false), [store])
+
+  // Tool menus hang where the editor's tray goes.
+  useEffect(() => {
+    if (editing) closeMenus()
+  }, [editing, closeMenus])
+
+  const ctx: ToolbarContext = {
+    activeTool,
+    measureMode,
+    drawMode,
+    selectTool: handleToolClick,
+    hotkeyLabel,
+    openMenu,
+    groupControls: (menu) => ({
+      activeTool,
+      selectTool: handleToolClick,
+      menuOpen: openMenu === menu,
+      toggleMenu: () => setOpenMenu(current => current === menu ? null : menu),
+      closeMenu: closeMenus,
+    }),
+    dice: { open: isDiceTrayOpen, toggle: toggleDiceTray, tool: diceTool, buttonRef: diceButtonRef },
+    loot: { open: lootRollerOpen, setOpen: setLootRollerOpen },
+    assets: { open: isAssetManagerOpen, toggle: handleAssetManagerToggle },
+    palette: { open: isCommandPaletteOpen, setOpen: setCommandPaletteOpen },
+  }
+
+  // The player view's bar ignores the GM's layout.
+  const available = availableToolbarControls(!dm)
+  const order = (dm ? layout.order : DEFAULT_TOOLBAR_ORDER).filter((id) => available.has(id))
+  const items: ResponsiveToolbarItem[] = order.map((id) => ({ id, ...TOOLBAR_CONTROL_ITEMS[id](ctx) }))
+  // The GM's bars beside the toolbar; online play's only while it runs.
+  const onlinePlayOn = useOnlinePlayOn()
+  const sideBars = useMemo<readonly SideBarId[]>(() => dm ? SIDE_BAR_IDS.filter((id) => id !== ONLINE_BAR.id || onlinePlayOn) : [], [dm, onlinePlayOn])
+  const editor = useToolbarEditor({ access: layoutAccess, store: editStore, items, available, sideBars, hotkeyLabel, editing, stop: stopEditing })
+  const hiddenIds: ReadonlySet<string> = layout.hidden
+  const publishedEdit = editing ? editor.api : null
+
+  // The undo/redo bar beside the bar works through the same editor.
+  useLayoutEffect(() => {
+    rowBridge?.edit.setState({ api: publishedEdit })
+  })
+  useEffect(() => () => rowBridge?.edit.setState({ api: null }), [rowBridge])
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <ToolbarEditContext.Provider value={publishedEdit}>
+        <ToolbarEditStoreContext.Provider value={editStore}>
+          <MotionConfig reducedMotion="user">
+            <ResponsiveToolbar
+              ref={ref || toolbarRef}
+              items={items}
+              editing={editing}
+              {...(dm && { hiddenIds, motion: editor.motion })}
+              // The GM view switch keeps the bar's last place, after "More tools".
+              // Named "GM view" whatever its state: being on says the rest.
+              end={dm && (
+                <>
+                  <span id={gmViewName} hidden>{t('toolbar.gmView', { key: hotkeyLabel('gmView') })}</span>
+                  <Toggle
+                    value={isGMView}
+                    onChange={toggleGMView}
+                    iconOn={Eye}
+                    iconOff={EyeOff}
+                    labelledBy={gmViewName}
+                    tooltipOn={t('toolbar.gmView', { key: hotkeyLabel('gmView') })}
+                    tooltipOff={t('toolbar.sessionView', { key: hotkeyLabel('gmView') })}
+                  />
+                </>
+              )}
+            />
+            <AnimatePresence>
+              {editing && (
+                <ToolbarEditor
+                  key="toolbar-editor"
+                  items={items}
+                  motion={editor.motion}
+                  viewId={viewId}
+                  focusOnEntry={editingByKeyboard}
+                />
+              )}
+            </AnimatePresence>
+          </MotionConfig>
+        </ToolbarEditStoreContext.Provider>
+      </ToolbarEditContext.Provider>
+      {/* Always mounted, so the message that edit mode ended is still read once the tray is gone. */}
+      {dm && <ToolbarLiveRegion announcement={editor.announcement} />}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        toolbarRef={toolbarRef}
+        {...(dm && { onCustomizeToolbar: startEditing })}
+      />
+      {/* On the main window's body (the map lives there only), as the command palette opens it:
+          inside the map's leaf the overlay is composited with the map's WebGL canvas, which on
+          some Macs drew the manager without its backgrounds and cards. The element around it is
+          the scope the stylesheet's rules look for above the overlay, which alone is not fixed. */}
+      {createPortal(
+        <div className="atlas-vtt-plugin">
+          <AssetManager
+            isOpen={isAssetManagerOpen}
+            onClose={handleCloseAssetManager}
+            {...(assetManagerInitialTab && { initialTab: assetManagerInitialTab })}
+            {...(assetManagerArmarium > 0 && { armariumRequest: assetManagerArmarium })}
+          />
+        </div>,
+        portalHost(),
+      )}
+      {isDiceTrayOpen && !diceTool && (
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'var(--background-primary)',
+          padding: 'var(--atlas-spacing-xl)',
+          border: '1px solid var(--background-modifier-border)',
+          borderRadius: 'var(--atlas-radius-m)',
+          zIndex: 1000
+        }}>
+          <p>{t('toolbar.diceFailed')}</p>
+          <Button variant="outline" size="sm" onClick={() => setDiceTrayOpen(false)}>{t('common.close')}</Button>
+        </div>
+      )}
+    </TooltipProvider>
+  );
+});
+
+MainToolbar.displayName = 'MainToolbar';

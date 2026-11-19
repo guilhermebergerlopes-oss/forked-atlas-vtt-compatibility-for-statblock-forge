@@ -1,0 +1,10 @@
+{
+  "id": "statblock-forge-atlas-compat",
+  "name": "Statblock Forge: Fork for Atlas VTT",
+  "version": "0.17.0",
+  "minAppVersion": "1.8.7",
+  "description": "Statblock Forge: Fork for Atlas VTT is a community extension. It is not made, endorsed or supported by Atlas VTT or Atlas Online. Support: https://github.com/guilhermebergerlopes-oss/statblock-forge-for-atlas-vtt/issues.",
+  "author": "Guilherme Berger Lopes",
+  "isDesktopOnly": true,
+  "authorUrl": "https://github.com/guilhermebergerlopes-oss/statblock-forge-for-atlas-vtt"
+}

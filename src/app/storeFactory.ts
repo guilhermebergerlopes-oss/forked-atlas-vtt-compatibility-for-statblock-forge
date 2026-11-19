@@ -1,0 +1,1608 @@
+import type { ViewState, TokenInput, TokenUpdates } from './types/viewState';
+import type { AtlasSheetInstance } from './api/sheets/types';
+import type { ResourceDefinition } from './resources/resourceTypes';
+import { defeatedResources, restedResources } from './resources/resourceValues';
+import { create } from "zustand";
+import type { Mutate, StoreApi } from "zustand";
+import { subscribeWithSelector, persist } from "zustand/middleware";
+import type { StorageValue } from "zustand/middleware";
+import { immer } from "zustand/middleware/immer";
+import type { App, Plugin } from 'obsidian';
+import type AtlasVTTPlugin from '../../main';
+import type { TokenEntity, Character, NotePin } from './types';
+import type { WallSegment, WallInput } from './types/wallTypes';
+import { DEFAULT_SCENE_LIGHTING, type LightChanges, type LightInput, type LightZoneChanges, type LightZoneInput, type SceneLightingChanges, type SceneLightingOption } from './types/lightingTypes';
+import type { AudioSource, AudioInput } from './types/audioTypes';
+import type { AnyWidget, WidgetSettings } from './types/widgetTypes';
+import type { InitiativeEntry, InitiativeConfig } from './types/initiativeTypes';
+import { createDefaultInitiativeState } from './types/initiativeTypes';
+import { createAtlasStorage, ATLAS_SCHEMA, ATLAS_VERSION } from './services/MapPersistence';
+import type { CameraState, GridState } from './types/gridTypes';
+import type { AtlasPersistStorage } from './services/MapPersistence';
+import { normalizeImagePath } from './utils/pathUtils';
+import { createInitiativeActions } from './stores/initiativeSlice';
+import type { InitiativeTurnActions } from './stores/initiativeTurnActions';
+import { createInitialUIState, createUIActions, type UISlice } from './stores/uiSlice';
+import { loadDrawTool, saveDrawTool } from './services/deviceSettings';
+import { createPinnedNotePreviewActions, type PinnedNotePreviewSlice } from './stores/pinnedNotePreviewSlice';
+import { createInitialLootRollerState, createLootRollerActions, readLootRollerState, type LootRollerSlice } from './stores/lootRollerSlice';
+import { isRecord } from './utils/guards';
+import { withHistory } from './stores/history';
+import { withoutCollectionWidgets } from './utils/collectionWidgets';
+import { withWidgetOff } from './utils/widgetActivation';
+import type { TimerState } from './utils/timerWidget';
+import { createMapObjectsActions, type MapObjectsSlice } from './stores/mapObjectsSlice';
+import { withoutOffMap } from './tokens/offMap';
+import { diceRandom } from './services/offlineDiceInputs';
+import type { MapMove } from './grid/mapStretch';
+import { objectsMovedWithMap } from './grid/mapStretchObjects';
+import { computeNextInstanceNumber } from './stores/tokenInstanceNumbers';
+import { placeTokens, raiseTokens, type TokenPlace } from './stores/tokenStacking';
+import type { ArtFloors } from './levels/levelSurfaces';
+import type { DiceRollResult } from './types/diceTypes';
+import { isAtlasToolAvailable } from './tools/toolAvailability';
+import { readExploredMask } from './lighting/exploredMaskCodec';
+import { clampLitThreshold, readSceneLighting } from './lighting/sceneLightingOptions';
+import { isPinLabelKind, nextPinLabel } from './tools/pinLabels';
+import { movedFolderPathOf, movedPathOf, rewriteMapReferences } from './services/renamedPaths';
+import { conditionValue, removeCondition, setConditionValue } from './utils/conditionValues';
+import { HydrationTracker } from './stores/hydrationTracker';
+import { isolateListeners } from './stores/isolatedListeners';
+import { detachSheetInstancesFromTokens } from './utils/sheetInstanceTokenBinding';
+import { firstLevelId, placedOnViewedLevel, placedOnViewedLevels, viewedLevelId } from './levels/sceneLevels';
+import { createSceneLevelsActions, writeExploredMask, type SceneLevelsSlice } from './stores/sceneLevelsSlice';
+import { createLevelSurfacesActions, type LevelSurfacesSlice } from './stores/levelSurfacesSlice';
+import { createMapFeaturesActions, type MapFeaturesSlice } from './stores/mapFeaturesSlice';
+import { createRoomsSlice, DEFAULT_ROOM_TOOL, type RoomsSlice } from './stores/roomsSlice';
+import { createLiquidsActions, type LiquidsSlice } from './stores/liquidsSlice';
+import { createMeasuresActions, dropTokenAuras, type MeasuresSlice } from './stores/measuresSlice';
+import { createAnnotationsActions, type AnnotationsSlice } from './stores/annotationsSlice';
+import { createFogActions, type FogSlice } from './stores/fogSlice';
+import { createTurnMovesActions, type TurnMovesSlice } from './stores/turnMovesSlice';
+import { createPlayerFramesActions, readPlayerFrames, type PlayerFramesSlice } from './stores/playerFramesSlice';
+import { readSceneSound } from './soundLibrary/sceneSound';
+import type { SceneSound } from './sound/soundTypes';
+import { levelsForFile, readExploredMasks, readSceneLevels } from './levels/levelFile';
+import { levelAlignmentsOf, movesWithFrame, withoutAlignments } from './levels/levelAlignment';
+import { levelsCarriedWithGrid, type CarriedLevels, type GridCarryScene } from './levels/levelGridCarry';
+
+// Individual store state interface (same as AtlasState but isolated)
+export interface ViewAtlasState extends ViewState {
+  setMapPath: (path: string | null) => void;
+  setPersistenceEnabled: (enabled: boolean) => void;
+  setMapLoaded: (loaded: boolean) => void;
+  setMapLoading: (loading: boolean, progress?: number, message?: string) => void;
+  setBackground: (bg: string | null) => void;
+  /** Replace the scene's Atlas-owned sheet instance records (not undo-tracked). */
+  setSheetInstances: (instances: Record<string, AtlasSheetInstance>) => void;
+  setGrid: (grid: GridState) => void;
+  /**
+   * Sets an aligned grid. Where the alignment draws the map another way (`GridState.mapStretch`),
+   * `move` takes what stands on the map along (`objectsMovedWithMap`), in the same write.
+   */
+  alignGrid: (grid: GridState, move?: MapMove) => void;
+  setGridUnits: (units: { unitType: 'feet' | 'yards' | 'meters' | 'units'; unitDistance: number }) => void;
+  setGridVisible: (visible: boolean) => void;
+  setSnapToGrid: (snap: boolean) => void;
+  setCamera: (partial: Partial<CameraState>) => void;
+
+  // Token actions
+  addToken: (data: TokenInput) => string;
+  /** Adds several tokens in one store write, so spawning a group is a single undo step. */
+  addTokens: (data: TokenInput[]) => string[];
+
+  addCharacter: (data: {
+    x: number;
+    y: number;
+    imagePath: string;
+    name: string;
+    notePath?: string;
+    snapped?: boolean;
+    ringColor?: string;
+    showRing?: boolean;
+  }) => string;
+
+  addTokenWithId: (
+    id: string,
+    data: { x: number; y: number; imagePath: string; snapped?: boolean },
+    extra: Pick<Character, 'name' | 'notePath'>
+  ) => void;
+
+  moveToken: (id: string, x: number, y: number) => void;
+  updateToken: (id: string, updates: TokenUpdates) => void;
+  /** Applies several token updates in one store write, so they form a single undo step. */
+  updateTokens: (entries: Array<{ id: string; changes: TokenUpdates }>) => void;
+  /** Points tokens and pins that name a vault file at the path it was renamed to. */
+  retargetRenamedFile: (oldPath: string, newPath: string) => void;
+  /** Points what the scene names at or below a renamed folder (a pin's folder of encounters) at its new place. */
+  retargetRenamedFolder: (oldPath: string, newPath: string) => void;
+  deleteToken: (id: string) => void;
+  setTokens: (map: Record<string, TokenEntity>) => void;
+  setTokenRing: (id: string, color: string | null) => void;
+  /** Adds (`active`) or removes a condition on every token in one store write, so it is a single undo step. */
+  setTokensCondition: (tokenIds: string[], conditionId: string, active: boolean) => void;
+  /**
+   * Raises or lowers a valued condition by `delta` on every token in one store write:
+   * a token without it gains it at `delta`, one that falls to 0 loses it.
+   */
+  changeTokensConditionValue: (tokenIds: string[], conditionId: string, delta: number) => void;
+  /**
+   * Sets a valued condition to `value` on every token in one store write: a token without it gains
+   * it, and a value of 0 or less, or null, takes it off.
+   */
+  setTokensConditionValue: (tokenIds: string[], conditionId: string, value: number | null) => void;
+  clearTokenConditions: (id: string) => void;
+  /** Spends every resource of `definitions` that defeats a token. */
+  killTokens: (ids: string[], definitions: readonly ResourceDefinition[]) => void;
+  /** Returns every resource of `definitions` to its start and clears conditions. */
+  resetTokens: (ids: string[], definitions: readonly ResourceDefinition[]) => void;
+
+  // Note Pin actions
+  /** With `hex`, the note is linked to the hex containing (x, y) rather than pinned to the point. */
+  addNotePin: (x: number, y: number, notePath: string, icon?: string, options?: { hex?: boolean; sceneLevel?: string; showName?: boolean }) => string;
+  /** A field given as undefined is removed. */
+  updateNotePin: (id: string, updates: { [K in keyof Omit<NotePin, 'id' | 'kind'>]?: NotePin[K] | undefined }) => void;
+  moveNotePin: (id: string, x: number, y: number) => void;
+  deleteNotePin: (id: string) => void;
+
+  // Drawings and texts (from annotationsSlice.ts)
+  addText: AnnotationsSlice['addText'];
+  updateText: AnnotationsSlice['updateText'];
+  setTexts: AnnotationsSlice['setTexts'];
+  addDrawing: AnnotationsSlice['addDrawing'];
+  addDrawings: AnnotationsSlice['addDrawings'];
+  setDrawings: AnnotationsSlice['setDrawings'];
+  updateAnnotations: AnnotationsSlice['updateAnnotations'];
+  moveAnnotations: AnnotationsSlice['moveAnnotations'];
+  placeAnnotations: AnnotationsSlice['placeAnnotations'];
+  deleteAnnotations: AnnotationsSlice['deleteAnnotations'];
+  orderAnnotations: AnnotationsSlice['orderAnnotations'];
+  groupAnnotations: AnnotationsSlice['groupAnnotations'];
+  ungroupAnnotations: AnnotationsSlice['ungroupAnnotations'];
+  replaceDrawings: AnnotationsSlice['replaceDrawings'];
+  clearAnnotations: AnnotationsSlice['clearAnnotations'];
+
+  // Fog actions (from fogSlice.ts)
+  addFogOperation: FogSlice['addFogOperation'];
+  addFogOperations: FogSlice['addFogOperations'];
+  clearFog: FogSlice['clearFog'];
+  coverAllFog: FogSlice['coverAllFog'];
+  revealFogGround: FogSlice['revealFogGround'];
+  hideFogArea: FogSlice['hideFogArea'];
+  forgetFogArea: FogSlice['forgetFogArea'];
+  hideRooms: FogSlice['hideRooms'];
+  /** Merges `changes` into the scene's lighting; an option given as undefined is removed. */
+  setSceneLighting: (changes: SceneLightingChanges) => void;
+  /** Sets the explored memory of `level` (unset: the level the view shows; null: the first); a level the scene no longer has keeps none. */
+  setExploredMask: (dataUrl: string | null, level?: string | null) => void;
+  setExploredEdits: (count: number) => void;
+
+  // Wall actions
+  addWall: (data: WallInput) => string;
+  updateWall: (id: string, changes: Partial<WallSegment>) => void;
+  deleteWall: (id: string) => void;
+  deleteWalls: (ids: string[]) => void;
+  /** Takes walls away and adds others in one write, so whatever follows the walls works them out once; returns the ids of the added ones. */
+  editWalls: (remove: readonly string[], add: readonly WallInput[]) => string[];
+  toggleDoor: (id: string) => void;
+  /** Locks a door, closing it, or unlocks it; a locked door does not open (`toggleDoor`). */
+  setDoorLocked: (id: string, locked: boolean) => void;
+
+  // Light actions
+  addLight: (data: LightInput) => string;
+  updateLight: (id: string, changes: LightChanges) => void;
+  deleteLight: (id: string) => void;
+  addLightZone: (data: LightZoneInput) => string;
+  updateLightZone: (id: string, changes: LightZoneChanges) => void;
+  deleteLightZone: (id: string) => void;
+  markAudioDirty: () => void;
+  consumeAudioDirty: () => boolean;
+
+  // Audio actions
+  addAudio: (data: AudioInput) => string;
+  updateAudio: (id: string, changes: Partial<AudioSource>) => void;
+  deleteAudio: (id: string) => void;
+  setActiveTool: (tool: ViewAtlasState['activeTool']) => void;
+  setSelectionMode: (mode: ViewAtlasState['selectionMode']) => void;
+  setSelection: (ids: string[]) => void;
+  clearSelection: () => void;
+  moveTokensBulk: (ids: string[], dx: number, dy: number) => void;
+  setTokenPositions: (positions: Array<{id: string, x: number, y: number}>) => void;
+  /**
+   * The pointer lets go of the tokens it dragged: `placeTokens` puts them at `positions`, on top
+   * of every other token, and they are no longer held. One write, so sight works the drop out once.
+   */
+  /** Puts dragged tokens down (`placeTokens`); `art` is what the view draws of the levels' maps, through which a token falls. */
+  dropTokens: (positions: readonly TokenPlace[], art?: ArtFloors) => void;
+  deleteTokens: (ids: string[]) => void;
+  /** Deletes every selected token, drawing, text and pin in one undo step. */
+  deleteSelected: () => void;
+  setIsDragging: (dragging: boolean) => void;
+  setWidgetSettings: (settings: WidgetSettings) => void;
+  updateWidget: (widgetId: string, updates: Partial<AnyWidget>) => void;
+  /** Sets a timer's time; a state without `running` leaves it paused. */
+  setTimerState: (widgetId: string, state: TimerState) => void;
+  addWidget: (widget: AnyWidget) => void;
+  removeWidget: (widgetId: string) => void;
+  /** Switches a widget on or off in this scene. */
+  setWidgetOn: (widgetId: string, on: boolean) => void;
+  reorderWidgets: (widgetIds: string[]) => void;
+  setWidgetValue: (widgetId: string, value: number) => void;
+  setGMView: (on: boolean) => void;
+  setDMNotePath: (path: string | null) => void;
+
+  // Levels (from sceneLevelsSlice.ts)
+  setViewedLevel: SceneLevelsSlice['setViewedLevel'];
+  setLevels: SceneLevelsSlice['setLevels'];
+  applyLevelScene: SceneLevelsSlice['applyLevelScene'];
+  moveTokensToLevel: SceneLevelsSlice['moveTokensToLevel'];
+  alignLevel: SceneLevelsSlice['alignLevel'];
+  addLevelLink: SceneLevelsSlice['addLevelLink'];
+  updateLevelLink: SceneLevelsSlice['updateLevelLink'];
+  deleteLevelLink: SceneLevelsSlice['deleteLevelLink'];
+
+  // Openings and floor on a level (from levelSurfacesSlice.ts)
+  addLevelSurface: LevelSurfacesSlice['addLevelSurface'];
+  updateLevelSurface: LevelSurfacesSlice['updateLevelSurface'];
+  deleteLevelSurface: LevelSurfacesSlice['deleteLevelSurface'];
+
+  // Named areas of the map for the GM (from mapFeaturesSlice.ts)
+  addMapFeatures: MapFeaturesSlice['addMapFeatures'];
+  updateMapFeature: MapFeaturesSlice['updateMapFeature'];
+  deleteMapFeature: MapFeaturesSlice['deleteMapFeature'];
+
+  // The rooms mode's choices (from roomsSlice.ts)
+  roomTool: RoomsSlice['roomTool'];
+  setRoomTool: RoomsSlice['setRoomTool'];
+  // Water, lava and acid that move on animated maps (from liquidsSlice.ts)
+  addLiquids: LiquidsSlice['addLiquids'];
+  deleteLiquid: LiquidsSlice['deleteLiquid'];
+  // Measurements that stay on the map (from measuresSlice.ts)
+  addMeasure: MeasuresSlice['addMeasure'];
+  updateMeasure: MeasuresSlice['updateMeasure'];
+  deleteMeasure: MeasuresSlice['deleteMeasure'];
+  clearMeasures: MeasuresSlice['clearMeasures'];
+  setTokenAuras: MeasuresSlice['setTokenAuras'];
+
+  // Movement counted per turn (from turnMovesSlice.ts)
+  countTurnMove: TurnMovesSlice['countTurnMove'];
+  /** Links the scene to its moods; nothing to link clears the field. Written with the map, never an undo step. */
+  setSceneSound: (sound: SceneSound | null) => void;
+
+  // Frames saved for the players' TV (from playerFramesSlice.ts)
+  addPlayerFrame: PlayerFramesSlice['addPlayerFrame'];
+  movePlayerFrame: PlayerFramesSlice['movePlayerFrame'];
+  removePlayerFrame: PlayerFramesSlice['removePlayerFrame'];
+
+  // Copy, paste and duplicate (from mapObjectsSlice.ts)
+  insertMapObjects: MapObjectsSlice['insertMapObjects'];
+  duplicateMapObjects: MapObjectsSlice['duplicateMapObjects'];
+  removeMapObjects: MapObjectsSlice['removeMapObjects'];
+  placeOffMapToken: MapObjectsSlice['placeOffMapToken'];
+
+  // Map state management
+  deleteMapObject: (type: 'token' | 'pin' | 'text' | 'drawing' | 'wall' | 'light' | 'audio', id: string) => void;
+  clearMapState: () => void;
+  plugin?: Plugin;
+  setTokenSettings: (settings: ViewAtlasState['tokenSettings']) => void;
+  setInitiativeTrackerOpen: (open: boolean) => void;
+  addToInitiative: (entry: Omit<InitiativeEntry, 'id' | 'order' | 'isActive'>) => string;
+  removeFromInitiative: (id: string, defeated?: ReadonlySet<string>) => void;
+  updateInitiativeEntry: (id: string, updates: Partial<InitiativeEntry>) => void;
+  rollAllInitiative: (roll?: string, fromStatblocks?: ReadonlyMap<string, number>) => void;
+  rollEntryInitiative: (id: string, roll?: string, fromStatblock?: number | null) => void;
+  nextTurn: InitiativeTurnActions['nextTurn'];
+  previousTurn: InitiativeTurnActions['previousTurn'];
+  reorderInitiative: (fromIndex: number, toIndex: number) => void;
+  moveToFront: (id: string) => void;
+  moveToBack: (id: string) => void;
+  startCombat: InitiativeTurnActions['startCombat'];
+  endCombat: () => void;
+  setInitiativeSitsOut: (id: string, sitsOut: boolean) => void;
+  delayInitiativeTurn: InitiativeTurnActions['delayInitiativeTurn'];
+  actNowInInitiative: InitiativeTurnActions['actNowInInitiative'];
+  swapInitiativeCards: InitiativeTurnActions['swapInitiativeCards'];
+  resetInitiative: () => void;
+  setInitiativeConfig: (config: Partial<InitiativeConfig>) => void;
+  addDiceLogEntry: (entry: DiceRollResult) => void;
+  clearDiceLog: () => void;
+
+  // Pinned note preview windows (persisted per map)
+  pinnedNotePreviews: PinnedNotePreviewSlice['pinnedNotePreviews'];
+  savePinnedNotePreview: PinnedNotePreviewSlice['savePinnedNotePreview'];
+  removePinnedNotePreview: PinnedNotePreviewSlice['removePinnedNotePreview'];
+
+  // Loot roller window (persisted per map)
+  lootRoller: LootRollerSlice['lootRoller'];
+  setLootRollerOpen: LootRollerSlice['setLootRollerOpen'];
+  updateLootRoller: LootRollerSlice['updateLootRoller'];
+  showLootRoll: LootRollerSlice['showLootRoll'];
+  openLightPopover: UISlice['openLightPopover'];
+  closeLightPopover: UISlice['closeLightPopover'];
+  openLightZonePopover: UISlice['openLightZonePopover'];
+  closeLightZonePopover: UISlice['closeLightZonePopover'];
+  openLevelLinkPopover: UISlice['openLevelLinkPopover'];
+  closeLevelLinkPopover: UISlice['closeLevelLinkPopover'];
+  openLevelSurfacePopover: UISlice['openLevelSurfacePopover'];
+  closeLevelSurfacePopover: UISlice['closeLevelSurfacePopover'];
+  openMeasurePopover: UISlice['openMeasurePopover'];
+  closeMeasurePopover: UISlice['closeMeasurePopover'];
+  setMeasureTool: UISlice['setMeasureTool'];
+  setDrawTool: UISlice['setDrawTool'];
+  setFogTool: UISlice['setFogTool'];
+  setLightingTool: UISlice['setLightingTool'];
+  setHeldTokens: UISlice['setHeldTokens'];
+  setExploredBrush: UISlice['setExploredBrush'];
+  setToolbarEditing: UISlice['setToolbarEditing'];
+  openDungeonGenerator: UISlice['openDungeonGenerator'];
+  closeDungeonGenerator: UISlice['closeDungeonGenerator'];
+  setRoofsHidden: UISlice['setRoofsHidden'];
+  setGridSettingsOpen: UISlice['setGridSettingsOpen'];
+  setDMScreenOpen: UISlice['setDMScreenOpen'];
+  setDMScreenPage: UISlice['setDMScreenPage'];
+  setGridAlignmentOpen: UISlice['setGridAlignmentOpen'];
+  setDiceLogOpen: UISlice['setDiceLogOpen'];
+  setHotkeyHelpOpen: UISlice['setHotkeyHelpOpen'];
+  setDocsOpen: UISlice['setDocsOpen'];
+  openAssetManager: UISlice['openAssetManager'];
+  openArmarium: UISlice['openArmarium'];
+  closeAssetManager: UISlice['closeAssetManager'];
+  setCommandPaletteOpen: UISlice['setCommandPaletteOpen'];
+  setDiceTrayOpen: UISlice['setDiceTrayOpen'];
+
+  // Note: Undo/Redo is added by the history middleware (`store.temporal`, stores/history.ts)
+}
+
+/** The subset of view state that is written to the map file. */
+export type PersistedViewState = Partial<ViewAtlasState>;
+
+// Simple default widget settings
+const createDefaultWidgets = (): WidgetSettings => ({
+  widgets: {},
+  globalVisible: true,
+  position: 'top',
+  scale: 1.0
+});
+
+// Initial state for each store instance
+/** Token display settings of a map that never set its own. */
+export const DEFAULT_TOKEN_SETTINGS: Readonly<ViewAtlasState['tokenSettings']> = {
+  showNameplates: false,
+  hiddenResources: [],
+  showInstanceBadges: true,
+  tokenRingSize: 1,
+};
+
+const createInitialState = (): Pick<ViewAtlasState, 'schema' | 'version' | 'mapPath' | 'background' | 'sheetInstances' | 'grid' | 'objects' | 'camera' | 'persistenceEnabled' | 'widgetSettings' | 'widgetValues' | 'dmNotePath' | 'tokenSettings' | 'initiative' | 'diceLog' | 'pinnedNotePreviews' | 'lootRoller' | 'lighting' | 'exploredMask' | 'exploredEdits' | 'partyValues' | 'turnMoves' | 'fightsStarted' | 'playerFrames' | 'sound'> => ({
+  lighting: { ...DEFAULT_SCENE_LIGHTING },
+  playerFrames: [],
+  sound: null,
+  exploredMask: null,
+  exploredEdits: 0,
+  partyValues: {},
+  turnMoves: {},
+  fightsStarted: 0,
+  schema: ATLAS_SCHEMA,
+  version: ATLAS_VERSION,
+  mapPath: null,
+  background: null,
+  sheetInstances: {},
+  grid: {
+    enabled: true,
+    visible: true,
+    snapToGrid: true,
+    type: 'square',
+    size: 70,
+    offsetX: 0,
+    offsetY: 0,
+    opacity: 0.5,
+    lineType: 'solid',
+    lineWidth: 1
+  },
+  objects: {
+    tokens: {},
+    fog: {},
+    pins: {},
+    texts: {},
+    drawings: {},
+    walls: {},
+    lights: {},
+    audios: {},
+  },
+  camera: { x: 0, y: 0, scale: 1 },
+  persistenceEnabled: true,
+  widgetSettings: createDefaultWidgets(),
+  widgetValues: {}, // Widget values stored separately
+  dmNotePath: null, // DM note linking
+  tokenSettings: {
+    showNameplates: false,
+    hiddenResources: [],
+    showInstanceBadges: true,
+    tokenRingSize: 1
+  },
+  initiative: createDefaultInitiativeState(),
+  diceLog: [],
+  pinnedNotePreviews: {},
+  lootRoller: createInitialLootRollerState(),
+});
+
+/**
+ * A view store as seen after its middleware stack: selector-aware `subscribe`,
+ * the `persist` API, and the storage flush used for tab-switch save coordination.
+ * Assignable to `StoreApi<ViewAtlasState>` for consumers that only need the basics.
+ */
+export type ViewAtlasStore = Mutate<
+  StoreApi<ViewAtlasState>,
+  [['zustand/subscribeWithSelector', never], ['zustand/persist', PersistedViewState]]
+> & {
+  flushStorage: () => Promise<void>;
+  /**
+   * Fills the store from the file at `mapPath`. Rejects when the store did not take the
+   * file's state (it cannot be read or loaded, or merging it failed); a path without a
+   * file is a new map and resolves with the store as it was. A read that returns after
+   * `isSuperseded` turned true, or after a later call, is dropped instead of applied.
+   */
+  rehydrateFromFile: (isSuperseded?: () => boolean) => Promise<void>;
+};
+
+/** The levels a grid write carries along; none while a load restores the scene, whose file already holds them as they belong. */
+function carriedLevels(state: GridCarryScene & { isMapLoading: boolean }, grid: GridState | null): CarriedLevels | null {
+  return state.isMapLoading ? null : levelsCarriedWithGrid(state, grid);
+}
+
+function applyTokenUpdates(token: TokenEntity | undefined, updates: TokenUpdates): void {
+  if (!token) return;
+  const normalized = updates.imagePath
+    ? { ...updates, imagePath: normalizeImagePath(updates.imagePath) }
+    : updates;
+  Object.assign(token, normalized);
+}
+
+/** Read persisted provider sheet instances conservatively; invalid entries are ignored. */
+function readPersistedSheetInstances(value: unknown, expectedSceneId?: string, availableTokenIds?: ReadonlySet<string>): ViewAtlasState['sheetInstances'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: ViewAtlasState['sheetInstances'] = {};
+  for (const [id, candidate] of Object.entries(value)) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+    const instance = candidate as Record<string, unknown>;
+    const source = instance.source as Record<string, unknown> | undefined;
+    const definition = instance.lastKnownDefinition as Record<string, unknown> | undefined;
+    if (instance.id !== id || typeof instance.sceneId !== 'string' || !instance.sceneId
+      || (expectedSceneId !== undefined && instance.sceneId !== expectedSceneId)
+      || (instance.tokenId !== undefined && typeof instance.tokenId !== 'string')
+      || (instance.sourceRevision !== undefined && typeof instance.sourceRevision !== 'string')
+      || !source || typeof source.providerId !== 'string' || !source.providerId.trim()
+      || typeof source.sourceId !== 'string' || !source.sourceId.trim()
+      || !definition || definition.providerId !== source.providerId || definition.sourceId !== source.sourceId
+      || typeof definition.name !== 'string' || !definition.name.trim() || !Array.isArray(definition.fields)
+      || (definition.revision !== undefined && typeof definition.revision !== 'string')) continue;
+    const tokenId = typeof instance.tokenId === 'string' && instance.tokenId.trim() && (!availableTokenIds || availableTokenIds.has(instance.tokenId))
+      ? instance.tokenId
+      : undefined;
+    if (instance.tokenId !== undefined && tokenId === undefined) {
+      const { tokenId: _staleTokenId, ...unbound } = instance;
+      result[id] = unbound as ViewAtlasState['sheetInstances'][string];
+    } else {
+      result[id] = candidate as ViewAtlasState['sheetInstances'][string];
+    }
+  }
+  return result;
+}
+
+/**
+ * Creates an isolated Atlas store instance for a specific view
+ */
+export function createViewAtlasStore(app: App, viewId: string, plugin?: AtlasVTTPlugin, isPlayerView: boolean = false): ViewAtlasStore {
+  // Create a storage factory that will access the store once it's created
+  let storeRef: Pick<StoreApi<ViewAtlasState>, 'getState'> | null = null;
+
+  const hydrations = new HydrationTracker();
+
+  // Keep a reference to the delayed storage so we can expose flush() on the store
+  let delayedStorageRef: ReturnType<typeof createDelayedStorage> | null = null;
+
+  const createDelayedStorage = () => {
+    // Create storage lazily but only ONCE to preserve debounce state
+    let currentStorage: AtlasPersistStorage<PersistedViewState> | null = null;
+
+    const getOrCreateStorage = (): AtlasPersistStorage<PersistedViewState> | null => {
+      if (!currentStorage && storeRef) {
+        currentStorage = createAtlasStorage<ViewAtlasState, PersistedViewState>(app, storeRef, plugin);
+      }
+      return currentStorage;
+    };
+
+    // The persisted slice last handed to storage. Immer preserves references for
+    // untouched branches, so a shallow key comparison tells us whether anything
+    // that is actually persisted changed since the last write.
+    let lastPersistedState: PersistedViewState | null = null;
+    const persistedSliceChanged = (next: PersistedViewState): boolean => {
+      if (!lastPersistedState) return true;
+      const keys = Object.keys(next) as Array<keyof PersistedViewState>;
+      if (keys.length !== Object.keys(lastPersistedState).length) return true;
+      return keys.some((key) => next[key] !== lastPersistedState![key]);
+    };
+
+    const storage = {
+      async getItem(name: string): Promise<StorageValue<PersistedViewState> | null> {
+        if (!storeRef) {
+          console.warn(`[ViewStore-${viewId}] Storage getItem called before store is ready`);
+          return null;
+        }
+        const storage = getOrCreateStorage();
+        return hydrations.read(async () => (storage ? storage.getItem(name) : null));
+      },
+      async setItem(name: string, value: StorageValue<PersistedViewState>): Promise<void> {
+        if (!storeRef) {
+          console.warn(`[ViewStore-${viewId}] Storage setItem called before store is ready`);
+          return;
+        }
+
+        // Check per-store persistence control. A store without a loaded map is refused by
+        // the storage as well; stopping here keeps its state from counting as already saved.
+        const state = storeRef.getState();
+        if (!state.persistenceEnabled || !state.mapLoaded) {
+          return;
+        }
+
+        if (!persistedSliceChanged(value.state)) {
+          return;
+        }
+        lastPersistedState = value.state;
+
+        const storage = getOrCreateStorage();
+        if (storage) {
+          await storage.setItem(name, value);
+        }
+      },
+      async removeItem(name: string): Promise<void> {
+        if (!storeRef) {
+          console.warn(`[ViewStore-${viewId}] Storage removeItem called before store is ready`);
+          return;
+        }
+        const storage = getOrCreateStorage();
+        if (storage) {
+          await storage.removeItem(name);
+        }
+      },
+      // Add flush method to handle pending saves
+      async flush(): Promise<void> {
+        if (currentStorage && typeof currentStorage.flush === 'function') {
+          await currentStorage.flush();
+        }
+      }
+    };
+    delayedStorageRef = storage;
+    return storage;
+  };
+  
+  // Undo/redo tracks objects, grid, background, widgetValues and the count of explored-memory
+  // edits only; selection, camera, tool and loading state never enter the history.
+  const store = create<ViewAtlasState>()(
+    withHistory(
+      subscribeWithSelector(
+        persist(
+          immer<ViewAtlasState>((set, get) => ({
+          // Initialize with default state
+          ...createInitialState(),
+          
+          // Player view state (set during creation)
+          isPlayerView: isPlayerView,
+          isGMView: true,
+
+          // Selection and tool state (not persisted)
+          selectedIds: [],
+          activeTool: 'move',
+          selectionMode: 'box' as const,
+          isDragging: false,
+          
+          // Collection management (not persisted)
+          ...(plugin && { plugin }),
+          currentCollectionId: 'default', // Default to 'default' collection
+          
+          // DM screen state
+          dmNotePath: null,
+          
+          // Token settings
+          tokenSettings: { ...DEFAULT_TOKEN_SETTINGS },
+          
+          // Per-store persistence control (not persisted)
+          persistenceEnabled: true,
+          setPersistenceEnabled: (enabled) => set((draft) => {
+            draft.persistenceEnabled = enabled;
+          }),
+          
+          mapLoaded: false,
+          setMapLoaded: (loaded) => set((draft) => {
+            draft.mapLoaded = loaded;
+          }),
+
+          // Loading state (not persisted)
+          isMapLoading: false,
+          setMapLoading: (loading, progress, message) => set((draft) => {
+            draft.isMapLoading = loading;
+            if (progress !== undefined) draft.mapLoadingProgress = progress;
+            if (message !== undefined) draft.mapLoadingMessage = message;
+          }),
+
+          // Set the map path - this drives persistence
+          setMapPath: (path) => set((draft) => {
+            draft.mapPath = path;
+          }),
+
+          setSheetInstances: (instances) => set((draft) => {
+            draft.sheetInstances = instances;
+          }),
+
+          // Update camera state
+          setCamera: (partial) => set((draft) => {
+            draft.camera = { ...draft.camera, ...partial };
+          }),
+
+          // Set background image path
+          setBackground: (bg) => set((draft) => {
+            draft.background = bg;
+          }),
+
+          // Set grid state; the levels fitted to it follow it in the same write (one undo step)
+          setGrid: (grid) => {
+            const carried = carriedLevels(get(), grid);
+            set((draft) => {
+              draft.grid = grid;
+              if (carried) {
+                draft.levelAlignments = carried.levelAlignments;
+                draft.objects = carried.objects;
+              }
+            });
+          },
+
+          alignGrid: (grid, move) => {
+            // What stands on the frame's levels moves with the frame's map, and every level fitted to the
+            // grid follows the grid to stay on its art
+            const state = get();
+            const objects = move ? objectsMovedWithMap(state.objects, move, movesWithFrame(state)) : state.objects;
+            const carried = carriedLevels({ ...state, objects }, grid);
+            set((draft) => {
+              draft.grid = grid;
+              draft.objects = carried?.objects ?? objects;
+              if (carried) draft.levelAlignments = carried.levelAlignments;
+            });
+          },
+          
+          // Set grid units
+          setGridUnits: (units) => set((draft) => {
+            if (draft.grid) {
+              draft.grid.unitType = units.unitType;
+              draft.grid.unitDistance = units.unitDistance;
+            }
+          }),
+          
+          // Set grid visibility
+          setGridVisible: (visible) => set((draft) => {
+            if (!draft.grid) {
+              // Initialize grid with defaults if it doesn't exist
+              draft.grid = {
+                enabled: true,
+                visible: visible,
+                snapToGrid: true,
+                size: 70,
+                offsetX: 0,
+                offsetY: 0,
+                opacity: 0.5,
+                lineType: 'solid',
+                lineWidth: 1
+              };
+            } else {
+              draft.grid.visible = visible;
+            }
+          }),
+          
+          // Set snap to grid
+          setSnapToGrid: (snap) => set((draft) => {
+            if (!draft.grid) {
+              // Initialize grid with defaults if it doesn't exist
+              draft.grid = {
+                enabled: true,
+                visible: true,
+                snapToGrid: snap,
+                size: 70,
+                offsetX: 0,
+                offsetY: 0,
+                opacity: 0.5,
+                lineType: 'solid',
+                lineWidth: 1
+              };
+            } else {
+              draft.grid.snapToGrid = snap;
+            }
+          }),
+
+          // Add a new token and return its ID
+          addToken: (data) => get().addTokens([data])[0]!,
+
+          addTokens: (entries) => {
+            const ids: string[] = [];
+            set((draft) => {
+              for (const data of entries) {
+                const id = data.id ?? `tok_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+                // Normalize the image path to prevent app:// URLs
+                const imagePath = normalizeImagePath(data.imagePath);
+                const instanceNumber = computeNextInstanceNumber(draft.objects.tokens, imagePath);
+                draft.objects.tokens[id] = { ...data, id, kind: data.kind ?? 'token', imagePath, instanceNumber, ...placedOnViewedLevel(draft) } as TokenEntity;
+                ids.push(id);
+              }
+              raiseTokens(draft.objects.tokens, ids);
+            });
+            return ids;
+          },
+
+          // Add a new character and return its ID
+          addCharacter: (data) => {
+            const id = `char_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+            const normalizedImagePath = normalizeImagePath(data.imagePath);
+
+            const instanceNumber = computeNextInstanceNumber(get().objects.tokens, normalizedImagePath);
+
+            const token: Character = {
+              id,
+              kind: 'character',
+              x: data.x,
+              y: data.y,
+              imagePath: normalizedImagePath,
+              name: data.name,
+              instanceNumber,
+              ...(data.notePath && { notePath: data.notePath }),
+              ...(data.snapped !== undefined && { snapped: data.snapped }),
+              ...(data.ringColor && { ringColor: data.ringColor }),
+              ...(data.showRing !== undefined && { showRing: data.showRing }),
+            };
+            set((draft) => {
+              draft.objects.tokens[id] = { ...token, ...placedOnViewedLevel(draft) };
+              raiseTokens(draft.objects.tokens, [id]);
+            });
+            return id;
+          },
+
+          addTokenWithId: (id, data, extra) => {
+            const normalizedImagePath = normalizeImagePath(data.imagePath);
+            const instanceNumber = computeNextInstanceNumber(get().objects.tokens, normalizedImagePath);
+
+            set((draft) => {
+              const char: Character = {
+                id,
+                kind: 'character',
+                x: data.x,
+                y: data.y,
+                imagePath: normalizedImagePath,
+                name: extra.name,
+                instanceNumber,
+                ...(extra.notePath && { notePath: extra.notePath }),
+                ...(data.snapped !== undefined && { snapped: data.snapped }),
+                ...placedOnViewedLevel(draft),
+              };
+              draft.objects.tokens[id] = char;
+              raiseTokens(draft.objects.tokens, [id]);
+            });
+          },
+
+          moveToken: (id, x, y) => set((draft) => {
+            const token = draft.objects.tokens[id];
+            if (token) {
+              token.x = x;
+              token.y = y;
+              draft._audioDirty = true;
+            }
+          }),
+
+          updateToken: (id, updates) => set((draft) => {
+            applyTokenUpdates(draft.objects.tokens[id], updates);
+          }),
+
+          updateTokens: (entries) => set((draft) => {
+            for (const { id, changes } of entries) {
+              applyTokenUpdates(draft.objects.tokens[id], changes);
+            }
+          }),
+
+          retargetRenamedFile: (oldPath, newPath) => set((draft) => {
+            rewriteMapReferences(draft, movedPathOf([{ from: oldPath, to: newPath }]));
+          }),
+
+          retargetRenamedFolder: (oldPath, newPath) => set((draft) => {
+            rewriteMapReferences(draft, movedFolderPathOf([{ from: oldPath, to: newPath }]));
+          }),
+
+          deleteToken: (id) => set((draft) => {
+            const existed = Boolean(draft.objects.tokens[id]);
+            delete draft.objects.tokens[id];
+            if (existed) draft.sheetInstances = detachSheetInstancesFromTokens(draft.sheetInstances, [id]);
+            dropTokenAuras(draft, [id]);
+          }),
+
+          setTokens: (map) => set((draft) => {
+            // Filter out tokens with blob URLs and normalize image paths
+            const filteredTokens: Record<string, TokenEntity> = {};
+            
+            for (const [id, token] of Object.entries(map)) {
+              if (token.imagePath && token.imagePath.startsWith('blob:')) {
+                console.warn(`[ViewAtlasStore] Skipping token with blob URL: ${id}`);
+              } else {
+                // Normalize the image path and ensure the token maintains all its properties
+                const normalizedToken = {
+                  ...token,
+                  imagePath: normalizeImagePath(token.imagePath)
+                };
+                filteredTokens[id] = normalizedToken;
+              }
+            }
+            
+            const removedTokenIds = Object.keys(draft.objects.tokens).filter((id) => !(id in filteredTokens));
+            draft.objects.tokens = filteredTokens;
+            draft.sheetInstances = detachSheetInstancesFromTokens(draft.sheetInstances, removedTokenIds);
+          }),
+
+
+          // Tool and selection state
+          setActiveTool: (tool) => set((draft) => {
+            if (!isAtlasToolAvailable(tool)) {
+              return;
+            }
+            draft.activeTool = tool;
+          }),
+
+          setSelectionMode: (mode) => set((draft) => {
+            draft.selectionMode = mode;
+          }),
+
+          setSelection: (ids) => set((draft) => {
+            draft.selectedIds = ids;
+          }),
+
+          clearSelection: () => set((draft) => {
+            draft.selectedIds = [];
+          }),
+          
+          setIsDragging: (dragging) => set((draft) => {
+            draft.isDragging = dragging;
+          }),
+
+          setGMView: (on) => set((draft) => {
+            draft.isGMView = on;
+          }),
+
+          // Widget settings
+          setWidgetSettings: (settings) => set((draft) => {
+            draft.widgetSettings = settings;
+          }),
+          
+          updateWidget: (widgetId, updates) => set((draft) => {
+            if (draft.widgetSettings.widgets[widgetId]) {
+              Object.assign(draft.widgetSettings.widgets[widgetId], updates);
+            }
+          }),
+          
+          setTimerState: (widgetId, { value, running }) => set((draft) => {
+            const widget = draft.widgetSettings.widgets[widgetId];
+            if (widget?.type !== 'timer') return;
+            widget.value = value;
+            if (running) widget.running = running;
+            else delete widget.running;
+          }),
+
+          addWidget: (widget) => set((draft) => {
+            draft.widgetSettings.widgets[widget.id] = widget;
+          }),
+          
+          removeWidget: (widgetId) => set((draft) => {
+            delete draft.widgetSettings.widgets[widgetId];
+            delete draft.widgetValues[widgetId];
+            const offWidgets = withWidgetOff(draft.widgetSettings.offWidgets, widgetId, false);
+            if (offWidgets) draft.widgetSettings.offWidgets = offWidgets;
+            else delete draft.widgetSettings.offWidgets;
+          }),
+
+          setWidgetOn: (widgetId, on) => set((draft) => {
+            const offWidgets = withWidgetOff(draft.widgetSettings.offWidgets, widgetId, !on);
+            if (offWidgets) draft.widgetSettings.offWidgets = offWidgets;
+            else delete draft.widgetSettings.offWidgets;
+            const widget = draft.widgetSettings.widgets[widgetId];
+            // Older Atlas versions hid widgets with this flag instead
+            if (on && widget && !widget.visible) widget.visible = true;
+          }),
+          
+          reorderWidgets: (widgetIds) => set((draft) => {
+            if (!widgetIds || !Array.isArray(widgetIds)) {
+              console.warn(`[ViewStore-${viewId}] Invalid widgetIds provided to reorderWidgets:`, widgetIds);
+              return;
+            }
+            widgetIds.forEach((id, index) => {
+              if (draft.widgetSettings.widgets[id]) {
+                draft.widgetSettings.widgets[id].order = index;
+              }
+            });
+          }),
+          
+          setWidgetValue: (widgetId, value) => set((draft) => {
+            // Store value separately from definition
+            draft.widgetValues[widgetId] = value;
+            
+            // Also update in widgetSettings for backward compatibility
+            if (draft.widgetSettings.widgets[widgetId]) {
+              draft.widgetSettings.widgets[widgetId].value = value;
+            }
+          }),
+          
+
+          moveTokensBulk: (ids, dx, dy) => set((draft) => {
+            if (!ids || !Array.isArray(ids)) {
+              console.warn(`[ViewStore-${viewId}] Invalid ids provided to moveTokensBulk:`, ids);
+              return;
+            }
+            ids.forEach(id => {
+              const token = draft.objects.tokens[id];
+              if (token) {
+                token.x += dx;
+                token.y += dy;
+              }
+            });
+            draft._audioDirty = true;
+          }),
+
+          setTokenPositions: (positions) => set((draft) => {
+            if (!positions || !Array.isArray(positions)) {
+              console.warn(`[ViewStore-${viewId}] Invalid positions provided to setTokenPositions:`, positions);
+              return;
+            }
+            positions.forEach(({id, x, y}) => {
+              const token = draft.objects.tokens[id];
+              if (token) {
+                token.x = x;
+                token.y = y;
+              }
+            });
+            draft._audioDirty = true;
+          }),
+
+          dropTokens: (positions, art) => set((draft) => {
+            const levelsBefore = new Map(positions.map(({ id }) => [id, draft.objects.tokens[id]?.level]));
+            placeTokens(draft, positions, art);
+            if (Object.keys(draft.heldTokens).length > 0) draft.heldTokens = {};
+            // Tokens that went down or up stairs leave the selection, which stays on the level shown.
+            const climbed = new Set(positions.filter(({ id }) => draft.objects.tokens[id]?.level !== levelsBefore.get(id)).map(({ id }) => id));
+            if (climbed.size > 0) draft.selectedIds = draft.selectedIds.filter((id) => !climbed.has(id));
+          }),
+
+          deleteTokens: (ids) => set((draft) => {
+            if (!ids || !Array.isArray(ids)) {
+              console.warn(`[ViewStore-${viewId}] Invalid ids provided to deleteTokens:`, ids);
+              return;
+            }
+            const removedTokenIds = ids.filter((id) => Boolean(draft.objects.tokens[id]));
+            removedTokenIds.forEach(id => delete draft.objects.tokens[id]);
+            draft.sheetInstances = detachSheetInstancesFromTokens(draft.sheetInstances, removedTokenIds);
+            dropTokenAuras(draft, ids);
+            
+            // Remove deleted token IDs from selection
+            draft.selectedIds = draft.selectedIds.filter(selectedId => !ids.includes(selectedId));
+          }),
+
+          // A combatant beside the map is never deleted by what the map has selected
+          deleteSelected: () => get().removeMapObjects(withoutOffMap(get().objects, get().selectedIds)),
+
+          // --- Copy, paste and duplicate (from mapObjectsSlice.ts) ---
+          ...createMapObjectsActions(set, get),
+
+          deleteMapObject: (type: 'token' | 'pin' | 'text' | 'drawing' | 'wall' | 'light' | 'audio', id: string) => set((draft) => {
+            switch (type) {
+              case 'token':
+                if (draft.objects.tokens[id]) {
+                  delete draft.objects.tokens[id];
+                  draft.sheetInstances = detachSheetInstancesFromTokens(draft.sheetInstances, [id]);
+                  dropTokenAuras(draft, [id]);
+                  // Remove from selection if selected
+                  draft.selectedIds = draft.selectedIds.filter(selectedId => selectedId !== id);
+                }
+                break;
+              case 'pin':
+                if (draft.objects.pins[id]) {
+                  delete draft.objects.pins[id];
+                  // Remove from selection if selected
+                  draft.selectedIds = draft.selectedIds.filter(selectedId => selectedId !== id);
+                }
+                break;
+              case 'text':
+                if (draft.objects.texts[id]) {
+                  delete draft.objects.texts[id];
+                  // Remove from selection if selected
+                  draft.selectedIds = draft.selectedIds.filter(selectedId => selectedId !== id);
+                }
+                break;
+              case 'drawing':
+                if (draft.objects.drawings[id]) {
+                  delete draft.objects.drawings[id];
+                  // Remove from selection if selected
+                  draft.selectedIds = draft.selectedIds.filter(selectedId => selectedId !== id);
+                }
+                break;
+              case 'wall':
+                if (draft.objects.walls[id]) {
+                  delete draft.objects.walls[id];
+                  draft.selectedIds = draft.selectedIds.filter(selectedId => selectedId !== id);
+                }
+                break;
+              case 'light':
+                if (draft.objects.lights[id]) {
+                  delete draft.objects.lights[id];
+                  draft.selectedIds = draft.selectedIds.filter(selectedId => selectedId !== id);
+                }
+                break;
+              case 'audio':
+                if (draft.objects.audios[id]) {
+                  delete draft.objects.audios[id];
+                  draft.selectedIds = draft.selectedIds.filter(selectedId => selectedId !== id);
+                  draft._audioDirty = true;
+                }
+                break;
+              default:
+                break;
+            }
+          }),
+          
+          // DM screen actions
+          setDMNotePath: (path) => set((draft) => {
+            draft.dmNotePath = path;
+          }),
+
+          // Token settings
+          setTokenSettings: (settings) => set((draft) => {
+            draft.tokenSettings = settings;
+          }),
+
+          // Note Pin actions
+          addNotePin: (x, y, notePath, icon, options) => {
+            const id = `pin_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+            set((draft) => {
+              const newPin: NotePin = { 
+                id, 
+                kind: 'pin',
+                x, 
+                y, 
+                notePath,
+                ...placedOnViewedLevel(draft),
+              };
+              if (icon) {
+                newPin.icon = icon;
+              }
+              if (options?.hex) {
+                newPin.hex = true;
+              }
+              if (options?.sceneLevel) {
+                newPin.sceneLevel = options.sceneLevel;
+              }
+              if (options?.showName) {
+                newPin.showName = true;
+              }
+              if (isPinLabelKind(icon)) {
+                newPin.label = nextPinLabel(draft.objects.pins, icon);
+              }
+              draft.objects.pins[id] = newPin;
+            });
+            return id;
+          },
+
+          updateNotePin: (id, updates) => set((draft) => {
+            const pin = draft.objects.pins[id];
+            if (pin) {
+              const kindChanged = updates.icon !== undefined && updates.icon !== pin.icon;
+              // A field given as undefined is removed, so a switch turned off leaves nothing behind
+              for (const [key, value] of Object.entries(updates)) {
+                if (value === undefined) Reflect.deleteProperty(pin, key);
+                else Reflect.set(pin, key, value);
+              }
+              // A pin keeps its label for life; only moving it to another sequence re-labels it
+              if (kindChanged) {
+                delete pin.label;
+                if (isPinLabelKind(pin.icon)) {
+                  pin.label = nextPinLabel(draft.objects.pins, pin.icon);
+                }
+              }
+            }
+          }),
+
+          moveNotePin: (id, x, y) => set((draft) => {
+            const pin = draft.objects.pins[id];
+            if (pin) {
+              pin.x = x;
+              pin.y = y;
+            }
+          }),
+
+          deleteNotePin: (id) => set((draft) => {
+            if (draft.objects.pins[id]) {
+              delete draft.objects.pins[id];
+              draft.selectedIds = draft.selectedIds.filter(selectedId => selectedId !== id);
+            }
+          }),
+
+          // Drawings and texts (from annotationsSlice.ts)
+          ...createAnnotationsActions(set, get),
+
+          // Fog actions (from fogSlice.ts)
+          ...createFogActions(set, get),
+
+          setSceneLighting: (changes) => set((draft) => {
+            Object.assign(draft.lighting, changes);
+            for (const field of Object.keys(changes) as SceneLightingOption[]) {
+              if (changes[field] === undefined) delete draft.lighting[field];
+            }
+            draft.lighting.ambient = Math.min(1, Math.max(0, draft.lighting.ambient));
+            if (draft.lighting.litThreshold !== undefined) draft.lighting.litThreshold = clampLitThreshold(draft.lighting.litThreshold);
+          }),
+
+          setExploredMask: (dataUrl, level) => set((draft) => {
+            writeExploredMask(draft, dataUrl, level);
+          }),
+
+          setExploredEdits: (count) => set((draft) => {
+            draft.exploredEdits = count;
+          }),
+
+          // Audio dirty flag
+          _audioDirty: false,
+          markAudioDirty: () => set((draft) => { draft._audioDirty = true; }),
+          consumeAudioDirty: () => {
+            const dirty = get()._audioDirty;
+            if (dirty) set((draft) => { draft._audioDirty = false; });
+            return dirty;
+          },
+
+          // Wall actions
+          // A wall, light, zone or sound is on the level the view shows, unless it names its levels (a piece of a split wall).
+          addWall: (data) => {
+            const id = `wall_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+            set((draft) => {
+              draft.objects.walls[id] = { id, kind: 'wall', ...placedOnViewedLevels(draft), ...data };
+              draft._audioDirty = true;
+            });
+            return id;
+          },
+
+          updateWall: (id, changes) => set((draft) => {
+            const wall = draft.objects.walls[id];
+            if (wall) {
+              Object.assign(wall, changes);
+              // A field given as undefined is removed: the wall is as if it never had it.
+              for (const key of Object.keys(changes) as (keyof WallSegment)[]) if (changes[key] === undefined) delete wall[key];
+              draft._audioDirty = true;
+            }
+          }),
+
+          deleteWall: (id) => set((draft) => {
+            delete draft.objects.walls[id];
+            draft.selectedIds = draft.selectedIds.filter(sid => sid !== id);
+            draft._audioDirty = true;
+          }),
+
+          deleteWalls: (ids) => set((draft) => {
+            for (const id of ids) {
+              delete draft.objects.walls[id];
+            }
+            draft.selectedIds = draft.selectedIds.filter(sid => !ids.includes(sid));
+            draft._audioDirty = true;
+          }),
+
+          editWalls: (remove, add) => {
+            const stamp = Date.now();
+            const ids = add.map(() => `wall_${stamp}_${Math.random().toString(36).slice(2, 11)}`);
+            if (remove.length === 0 && add.length === 0) return ids;
+            set((draft) => {
+              for (const id of remove) delete draft.objects.walls[id];
+              const levels = placedOnViewedLevels(draft);
+              add.forEach((data, index) => {
+                draft.objects.walls[ids[index]!] = { id: ids[index]!, kind: 'wall', ...levels, ...data };
+              });
+              if (remove.length > 0) {
+                const gone = new Set(remove);
+                draft.selectedIds = draft.selectedIds.filter((id) => !gone.has(id));
+              }
+              draft._audioDirty = true;
+            });
+            return ids;
+          },
+
+          toggleDoor: (id) => set((draft) => {
+            const wall = draft.objects.walls[id];
+            // A locked door stays shut until it is unlocked.
+            if (wall && (wall.type === 'door' || wall.type === 'secret-door') && wall.locked !== true) {
+              wall.closed = !(wall.closed ?? true);
+              draft._audioDirty = true;
+            }
+          }),
+
+          setDoorLocked: (id, locked) => set((draft) => {
+            const wall = draft.objects.walls[id];
+            if (!wall || (wall.type !== 'door' && wall.type !== 'secret-door')) return;
+            if (!locked) {
+              delete wall.locked;
+              return;
+            }
+            wall.locked = true;
+            if (!(wall.closed ?? true)) {
+              wall.closed = true;
+              draft._audioDirty = true;
+            }
+          }),
+
+          // Light actions
+          addLight: (data) => {
+            const id = `light_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+            set((draft) => {
+              draft.objects.lights[id] = { id, kind: 'light', ...placedOnViewedLevels(draft), ...data };
+            });
+            return id;
+          },
+
+          updateLight: (id, changes) => set((draft) => {
+            const light = draft.objects.lights[id];
+            if (!light) return;
+            Object.assign(light, changes);
+            // A field given as undefined is removed, not stored as undefined.
+            for (const field of Object.keys(changes) as (keyof LightChanges)[]) {
+              if (changes[field] === undefined) delete light[field];
+            }
+          }),
+
+          deleteLight: (id) => set((draft) => {
+            delete draft.objects.lights[id];
+            draft.selectedIds = draft.selectedIds.filter(sid => sid !== id);
+          }),
+
+          // Light zones: map geometry like walls, in the order they were drawn
+          addLightZone: (data) => {
+            const id = `zone_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+            set((draft) => {
+              // Whatever is in their place that is no record (a store filled by something else than a load) gives way.
+              if (!isRecord(draft.objects.lightZones)) draft.objects.lightZones = {};
+              draft.objects.lightZones[id] = { id, kind: 'light-zone', ...placedOnViewedLevels(draft), ...data };
+            });
+            return id;
+          },
+
+          updateLightZone: (id, changes) => set((draft) => {
+            const zone = draft.objects.lightZones?.[id];
+            if (!zone) return;
+            Object.assign(zone, changes);
+            for (const field of Object.keys(changes) as (keyof LightZoneChanges)[]) {
+              if (changes[field] === undefined) delete zone[field];
+            }
+          }),
+
+          deleteLightZone: (id) => set((draft) => {
+            delete draft.objects.lightZones?.[id];
+            if (draft.lightZonePopover === id) draft.lightZonePopover = null;
+          }),
+
+          // Audio actions
+          addAudio: (data) => {
+            const id = `audio_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+            set((draft) => {
+              draft.objects.audios[id] = { id, kind: 'audio', ...placedOnViewedLevels(draft), ...data };
+              draft._audioDirty = true;
+            });
+            return id;
+          },
+
+          updateAudio: (id, changes) => set((draft) => {
+            const audio = draft.objects.audios[id];
+            if (audio) {
+              Object.assign(audio, changes);
+              draft._audioDirty = true;
+            }
+          }),
+
+          deleteAudio: (id) => set((draft) => {
+            delete draft.objects.audios[id];
+            draft.selectedIds = draft.selectedIds.filter(sid => sid !== id);
+            draft._audioDirty = true;
+          }),
+
+          // Clear all map state when switching maps
+          clearMapState: () => set((draft) => {
+            // Preserve the mapPath as it's needed for storage operations
+            
+            // Create completely fresh empty objects to ensure no state bleeds through
+            draft.sheetInstances = {};
+            draft.objects = {
+              tokens: {},
+              fog: {},
+              pins: {},
+              texts: {},
+              drawings: {},
+              walls: {},
+              lights: {},
+              audios: {},
+            };
+            // Reset grid to defaults
+            draft.grid = {
+              enabled: true,
+              visible: true,
+              snapToGrid: true,
+              type: 'square',
+              size: 70,
+              offsetX: 0,
+              offsetY: 0,
+              opacity: 0.5,
+              lineType: 'solid',
+              lineWidth: 1
+            };
+            // Reset camera to origin
+            draft.camera = { x: 0, y: 0, scale: 1 };
+            draft.selectedIds = [];
+            draft.dmNotePath = null;
+            // Maps without saved widgets must not inherit the previous map's
+            draft.widgetSettings = createDefaultWidgets();
+            draft.widgetValues = {};
+            draft.pinnedNotePreviews = {};
+            draft.lootRoller = createInitialLootRollerState();
+            draft.lighting = { ...DEFAULT_SCENE_LIGHTING };
+            draft.playerFrames = [];
+            draft.sound = null;
+            draft.exploredMask = null;
+            draft.exploredMasks = undefined;
+            draft.exploredEdits = 0;
+            draft.turnMoves = {};
+            draft.levels = undefined;
+            draft.levelAlignments = undefined;
+            draft.viewedLevel = null;
+
+            // Note: We don't clear background here - it will be set by the new map
+            // Note: We don't clear mapPath - it must be preserved for storage adapter
+            
+          }),
+
+          // Token ring actions
+          setTokenRing: (id, color) => set((draft) => {
+            const existing = draft.objects.tokens[id];
+            if (!existing) {
+              console.warn(`[ViewStore-${viewId}] setTokenRing: token not found`, id);
+              return;
+            }
+
+            // Create new token object so Reactivity triggers
+            const updated: TokenEntity = { ...existing };
+            if (color === null) {
+              delete updated.ringColor;
+            } else {
+              updated.ringColor = color;
+            }
+
+            // Replace in map and also replace the map reference so Zustand selector fires
+            draft.objects.tokens = {
+              ...draft.objects.tokens,
+              [id]: updated,
+            };
+          }),
+          
+          // Token condition actions
+          setTokensCondition: (tokenIds, conditionId, active) => set((draft) => {
+            for (const tokenId of tokenIds) {
+              const token = draft.objects.tokens[tokenId];
+              if (!token || (token.conditions ?? []).includes(conditionId) === active) continue;
+              if (active) token.conditions = [...(token.conditions ?? []), conditionId];
+              else removeCondition(token, conditionId);
+            }
+          }),
+
+          changeTokensConditionValue: (tokenIds, conditionId, delta) => set((draft) => {
+            for (const tokenId of tokenIds) {
+              const token = draft.objects.tokens[tokenId];
+              if (!token) continue;
+              const current = (token.conditions ?? []).includes(conditionId) ? conditionValue(token, conditionId) : 0;
+              setConditionValue(token, conditionId, current + delta, true);
+            }
+          }),
+
+          setTokensConditionValue: (tokenIds, conditionId, value) => set((draft) => {
+            for (const tokenId of tokenIds) {
+              const token = draft.objects.tokens[tokenId];
+              if (token) setConditionValue(token, conditionId, value ?? 0, true);
+            }
+          }),
+
+          clearTokenConditions: (id) => set((draft) => {
+            const token = draft.objects.tokens[id];
+            if (!token) {
+              console.warn(`[ViewStore-${viewId}] clearTokenConditions: token not found`, id);
+              return;
+            }
+
+            delete token.conditions;
+            delete token.conditionValues;
+          }),
+
+          // Kill tokens - set HP to 0
+          killTokens: (ids, definitions) => set((draft) => {
+            for (const id of ids) {
+              const token = draft.objects.tokens[id];
+              if (token?.kind !== 'character') continue;
+              const resources = defeatedResources(token, definitions);
+              if (resources) token.resources = resources;
+            }
+          }),
+
+          // Reset tokens - restore every resource and clear conditions
+          resetTokens: (ids, definitions) => set((draft) => {
+            for (const id of ids) {
+              const token = draft.objects.tokens[id];
+              if (!token) continue;
+              const resources = token.kind === 'character' ? restedResources(token, definitions) : undefined;
+              if (resources) token.resources = resources;
+              delete token.conditions;
+              delete token.conditionValues;
+            }
+          }),
+
+          // --- Initiative Tracker State & Actions (from initiativeSlice.ts) ---
+          initiative: createDefaultInitiativeState(),
+          initiativeTrackerOpen: false,
+          ...createInitiativeActions(set, viewId, get, diceRandom),
+
+          // --- Dice Roll Log (persisted per map) ---
+          diceLog: [],
+          addDiceLogEntry: (entry: DiceRollResult) => set((draft) => {
+            draft.diceLog.unshift(entry);
+            if (draft.diceLog.length > 20) {
+              draft.diceLog = draft.diceLog.slice(0, 20);
+            }
+          }),
+          clearDiceLog: () => set((draft) => {
+            draft.diceLog = [];
+          }),
+
+          // --- Pinned note previews (persisted per map) ---
+          pinnedNotePreviews: {},
+          ...createPinnedNotePreviewActions(set),
+
+          // --- Loot roller window (persisted per map) ---
+          lootRoller: createInitialLootRollerState(),
+          ...createLootRollerActions(set),
+
+          // --- Levels of the scene (from sceneLevelsSlice.ts) ---
+          ...createSceneLevelsActions(set, get),
+          ...createLevelSurfacesActions(set),
+          ...createMapFeaturesActions(set),
+          roomTool: DEFAULT_ROOM_TOOL,
+          ...createRoomsSlice(set),
+          ...createLiquidsActions(set),
+          ...createMeasuresActions(set),
+          ...createTurnMovesActions(set),
+          ...createPlayerFramesActions(set),
+          setSceneSound: (sound) => set((draft) => { draft.sound = readSceneSound(sound); }),
+
+          // --- Per-view UI visibility (from uiSlice.ts) ---
+          ...createInitialUIState(loadDrawTool(app)),
+          ...createUIActions(set, (choices) => saveDrawTool(app, choices)),
+
+        })),
+        {
+          name: `atlas-view-${viewId}`,
+          
+          // Create a unique storage adapter for this view that uses this store instance
+          storage: createDelayedStorage(),
+          
+          // Store version for migrations
+          version: ATLAS_VERSION,
+          
+          // Skip automatic hydration on store creation
+          skipHydration: true,
+          
+          // Only persist relevant parts of state (check per-store persistence control)
+          partialize: (state): PersistedViewState => {
+            // Use per-store persistence control instead of global
+            if (!state.persistenceEnabled) {
+              return {};
+            }
+
+            // Collection-wide widgets are saved in the collection settings, not in the scene
+            const sceneWidgets = withoutCollectionWidgets({
+              widgets: state.widgetSettings.widgets,
+              widgetValues: state.widgetValues,
+            });
+            
+            return {
+              schema: state.schema,
+              version: state.version,
+              mapPath: state.mapPath, // Include mapPath to verify data belongs to correct map
+              background: state.background,
+              sheetInstances: state.sheetInstances,
+              levels: levelsForFile(state.levels, state.background, state.levelAlignments),
+              // Left out on the first level, so files of scenes that stay there stay as they were
+              ...(viewedLevelId(state) !== firstLevelId(state.levels) && { viewedLevel: state.viewedLevel }),
+              grid: state.grid,
+              objects: state.objects,
+              camera: state.camera,
+              widgetValues: sceneWidgets.widgetValues,
+              widgetSettings: { ...state.widgetSettings, widgets: sceneWidgets.widgets },
+              dmNotePath: state.dmNotePath, // DM note linking
+              tokenSettings: state.tokenSettings, // Token display settings
+              initiative: state.initiative, // Initiative tracker state
+              initiativeTrackerOpen: state.initiativeTrackerOpen, // Initiative tracker open/closed state
+              diceLog: state.diceLog, // Dice roll history (last 20 per map)
+              pinnedNotePreviews: state.pinnedNotePreviews, // Pinned note preview windows
+              lootRoller: state.lootRoller, // Loot roller window, filters and history
+              lighting: state.lighting,
+              exploredMask: state.exploredMask,
+              exploredMasks: state.exploredMasks,
+              // Left out until the GM saves one, so files of scenes without stay as they were
+              ...(state.playerFrames.length > 0 && { playerFrames: state.playerFrames }),
+              ...(state.sound && { sound: state.sound }),
+            };
+          },
+          
+          // The map file arrives unchecked; fields that need it are checked here, once per load.
+          merge: (persisted, current): ViewAtlasState => {
+            const saved: Partial<ViewAtlasState> = isRecord(persisted) ? persisted : {};
+            const read = readSceneLevels(saved.levels, saved.background ?? current.background);
+            const levels = withoutAlignments(read);
+            return {
+              ...current,
+              ...saved,
+              levels,
+              // The loader chose it from the file; a later read (another device's save) moves no view
+              viewedLevel: current.viewedLevel,
+              levelAlignments: levelAlignmentsOf(read),
+              exploredMasks: readExploredMasks(saved.exploredMasks, levels),
+              lootRoller: readLootRollerState(saved.lootRoller),
+              lighting: readSceneLighting(saved.lighting),
+              playerFrames: readPlayerFrames(saved.playerFrames),
+              sound: readSceneSound(saved.sound),
+              sheetInstances: readPersistedSheetInstances(
+                saved.sheetInstances,
+                typeof saved.mapPath === 'string' ? saved.mapPath : undefined,
+                isRecord(saved.objects) && isRecord(saved.objects.tokens) ? new Set(Object.keys(saved.objects.tokens)) : undefined,
+              ),
+              exploredMask: readExploredMask(saved.exploredMask),
+              // Counted per session: a file never brings one.
+              exploredEdits: current.exploredEdits,
+              // The campaign's, never the scene's.
+              partyValues: current.partyValues,
+              // Counted while the scene is open: a file never brings them.
+              turnMoves: current.turnMoves,
+              fightsStarted: current.fightsStarted,
+            };
+          },
+
+          onRehydrateStorage: () => hydrations.reporter((error) => {
+            console.error(`[ViewStore-${viewId}] Hydration failed:`, error);
+          }),
+        }
+      )
+    )
+  )
+);
+
+  // Set the store reference after creation
+  storeRef = store;
+
+  // A renderer that fails on some state must not keep the others, or a scene load, from going on
+  isolateListeners(store, (error) => {
+    console.error(`[ViewStore-${viewId}] A store subscriber failed:`, error);
+  });
+
+  // Immer types `setState` with draft updaters, and WritableDraft<ViewAtlasState> is not
+  // assignable back to ViewAtlasState because the state holds the Obsidian `plugin`.
+  // The public type keeps the plain StoreApi `setState`, which the Immer store also honours.
+  const publicStore = store as unknown as Omit<ViewAtlasStore, 'flushStorage' | 'rehydrateFromFile'>;
+
+  // Expose the storage flush method on the store for tab-switch save coordination
+  return Object.assign(publicStore, {
+    flushStorage: async (): Promise<void> => {
+      if (delayedStorageRef && typeof delayedStorageRef.flush === 'function') {
+        await delayedStorageRef.flush();
+      }
+    },
+    rehydrateFromFile: (isSuperseded = (): boolean => false): Promise<void> => (
+      hydrations.run(() => store.persist.rehydrate(), isSuperseded)
+    ),
+  });
+}

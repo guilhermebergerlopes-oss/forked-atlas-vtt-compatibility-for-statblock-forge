@@ -1,0 +1,26 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// The slider field the light popovers share
+// ═══════════════════════════════════════════════════════════════════════════
+// Imported inside the `.atlas-vtt-plugin` scope of styles/main.scss.
+
+@use '../../../../styles/tokens' as *;
+@use '../../../../styles/mixins' as *;
+
+.atlas-light-panel__slider {
+  @include atlas-flex-col($spacing-xs);
+}
+
+.atlas-light-panel__slider-head {
+  @include atlas-flex-row($spacing-s);
+  justify-content: space-between;
+
+  > span {
+    @include atlas-field-label;
+  }
+
+  > output {
+    color: var(--text-muted);
+    font-size: $font-ui-small;
+    font-variant-numeric: tabular-nums;
+  }
+}

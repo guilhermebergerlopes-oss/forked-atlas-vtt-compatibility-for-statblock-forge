@@ -1,0 +1,284 @@
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+
+// Rows stand $surface-inset inside the menu's border, concentric with its corner, and their text
+// $spacing-m further in: the text edge of every Atlas menu.
+$ctx-row-height: 28px;
+$ctx-inset: $surface-inset;
+
+// ── Menu container ──────────────────────────────────────────────────────────
+
+.atlas-ctx-menu {
+  @include atlas-elevated-surface;
+  @include atlas-panel-radius($surface-radius);
+  box-shadow: $shadow-md;
+  display: flex;
+  flex-direction: column;
+  padding: $ctx-inset;
+  // Rows sit close like Obsidian's own menus.
+  gap: var(--size-2-1);
+  box-sizing: border-box;
+  min-width: min(180px, var(--radix-dropdown-menu-content-available-width, 180px));
+  max-width: min(280px, var(--radix-dropdown-menu-content-available-width, 280px));
+  // Never scrolls: `useMenuFit` gives it room, and this only keeps it on screen until then
+  max-height: var(--radix-dropdown-menu-content-available-height, none);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: $z-atlas-dropdown;
+  // Appears at once and fades out. Closed, it stays mounted while `atlas-ctx-menu-leave` runs (Radix
+  // unmounts it at that animation's end), and a menu opened meanwhile turns back from the fade's
+  // current opacity, since a transition reverses where an animation would start again.
+  transition: opacity $transition-fast $transition-ease-out;
+
+  &[data-state='closed'] {
+    opacity: 0;
+    pointer-events: none;
+    animation: atlas-ctx-menu-leave $transition-fast linear;
+  }
+}
+
+// Changes nothing that is drawn: it only lasts as long as the fade, which the transition does.
+@keyframes atlas-ctx-menu-leave {
+  to {
+    --atlas-ctx-menu-leaving: 1;
+  }
+}
+
+// A menu too tall for its window (`useMenuFit`); `--atlas-ctx-rows` is how many rows fit
+.atlas-ctx-menu--columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--atlas-ctx-rows), auto);
+  align-content: start;
+  column-gap: $ctx-inset;
+  max-width: none;
+}
+
+.atlas-ctx-separator {
+  height: $border-width-s;
+  margin: $spacing-xs 0;
+  background: var(--background-modifier-border);
+}
+
+.atlas-ctx-menu--dropdown {
+  min-width: var(--radix-dropdown-menu-trigger-width);
+}
+
+// ── Menu item (Radix Item / CheckboxItem / SubTrigger) ──────────────────────
+
+.atlas-ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-xs;
+  min-height: $ctx-row-height;
+  padding: 0 $spacing-m;
+  @include atlas-panel-inset-radius($ctx-inset);
+  background: transparent;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
+
+  // Radix applies [data-highlighted] on hover + keyboard focus
+  &[data-highlighted] {
+    background: var(--background-modifier-hover);
+  }
+
+  &:active {
+    background: var(--background-modifier-active-hover);
+  }
+
+  &[data-disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  &--destructive {
+    --atlas-ctx-error: var(--text-error);
+    color: var(--atlas-ctx-error);
+
+    .atlas-ctx-icon svg {
+      color: var(--atlas-ctx-error);
+    }
+
+    // Obsidian's red is a step too pale on a light menu (4.2:1 on white) and too dark on a dark one
+    // (APCA Lc 39): it is moved towards the menu's opposite until the word reads (5.2:1, Lc 64).
+    .theme-light & {
+      --atlas-ctx-error: color-mix(in srgb, var(--text-error) 88%, black);
+    }
+
+    .theme-dark & {
+      --atlas-ctx-error: color-mix(in srgb, var(--text-error) 50%, white);
+    }
+  }
+
+  &__leading {
+    display: flex;
+    align-items: center;
+    gap: $spacing-s;
+    min-width: 0;
+  }
+
+  &__label {
+    @include atlas-truncate;
+  }
+
+  &__trailing {
+    display: flex;
+    align-items: center;
+    gap: $spacing-xs;
+    margin-left: auto;
+    flex-shrink: 0;
+
+    .atlas-ctx-icon {
+      width: $icon-xs;
+      height: $icon-xs;
+
+      svg {
+        width: $icon-xs;
+        height: $icon-xs;
+      }
+    }
+  }
+}
+
+// ── Detail (a quieter second text after the label) ───────────────────────────
+
+// It keeps to the row's end and never takes more than half of it from the label.
+.atlas-ctx-item__detail {
+  @include atlas-truncate;
+  max-width: 50%;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+
+  // The detail already keeps to the end; what follows it stays beside it.
+  + .atlas-ctx-item__trailing {
+    margin-left: 0;
+  }
+}
+
+// ── Check mark and value stepper (checkable and valued items) ────────────────
+
+.atlas-ctx-item__check {
+  display: flex;
+
+  // Always mounted, so a stepper before it keeps its place when the item is ticked
+  &[data-state='unchecked'] {
+    visibility: hidden;
+  }
+}
+
+.atlas-ctx-stepper {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+// Obsidian styles every button; the menu scope outweighs it
+.atlas-ctx-menu .atlas-ctx-stepper__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // A press target of 24 px, which still fits inside a row, so valued rows keep the height of the others
+  width: $button-height-s;
+  height: $button-height-s;
+  padding: 0;
+  border: none;
+  // As far inside its row from top and bottom as the row's corner allows: its curve runs with the row's.
+  border-radius: calc(#{$radius-m} - (#{$ctx-row-height} - #{$button-height-s}) / 2);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .atlas-ctx-icon,
+  .atlas-ctx-icon svg {
+    width: $icon-xs;
+    height: $icon-xs;
+  }
+}
+
+.atlas-ctx-stepper__value {
+  min-width: 2ch;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+// ── Icon slots ──────────────────────────────────────────────────────────────
+
+.atlas-ctx-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: $icon-s;
+  height: $icon-s;
+  flex-shrink: 0;
+
+  svg {
+    width: $icon-s;
+    height: $icon-s;
+    color: var(--text-muted);
+  }
+}
+
+.atlas-ctx-icon-spacer {
+  width: $icon-s;
+  height: $icon-s;
+  flex-shrink: 0;
+}
+
+// ── Destructive action row (Kill + Delete at bottom) ────────────────────────
+
+.atlas-ctx-destructive-row {
+  display: flex;
+  gap: $spacing-xs;
+}
+
+.atlas-ctx-destructive-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: $spacing-s;
+  min-height: $ctx-row-height;
+  padding: 0 $spacing-m;
+  border: none;
+  @include atlas-panel-inset-radius($ctx-inset);
+  background: transparent;
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  white-space: nowrap;
+
+  svg {
+    flex-shrink: 0;
+    color: var(--text-error);
+  }
+
+  &:hover {
+    background: color-mix(in oklch, var(--color-red) 15%, transparent);
+  }
+
+  &:active {
+    background: color-mix(in oklch, var(--color-red) 25%, transparent);
+  }
+}

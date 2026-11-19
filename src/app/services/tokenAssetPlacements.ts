@@ -1,0 +1,83 @@
+import { App, TFile } from 'obsidian';
+import { ATLAS_VIEW_TYPE, isAtlasView } from '../atlasViewType';
+import { dropAurasOf } from '../measure/auraUpkeep';
+import { isPersistedMapEnvelope } from './MapPersistence';
+import { runHistoryTransaction } from '../stores/history';
+import { normalizeImagePath } from '../utils/pathUtils';
+
+/**
+ * Map tokens reference a token asset by its image path. Deleting the asset
+ * trashes that image, so these helpers find and remove the placements first.
+ */
+
+function placesImage(imagePaths: Set<string>, tokenImagePath: string | undefined): boolean {
+  return !!tokenImagePath && imagePaths.has(normalizeImagePath(tokenImagePath));
+}
+
+/** Map files that place at least one token using any of the given images. */
+export async function findTokenPlacements(app: App, imagePaths: readonly string[]): Promise<TFile[]> {
+  const images = new Set(imagePaths.map(normalizeImagePath));
+  const placements: TFile[] = [];
+  for (const file of app.vault.getFiles().filter((f) => f.extension === 'atlasmap')) {
+    try {
+      const raw: unknown = JSON.parse(await app.vault.read(file));
+      const tokens = isPersistedMapEnvelope(raw) ? raw.state?.objects?.tokens : undefined;
+      if (tokens && Object.values(tokens).some((token) => placesImage(images, token.imagePath))) placements.push(file);
+    } catch (error) {
+      console.error(`[tokenAssetPlacements] Error reading map ${file.path}:`, error);
+    }
+  }
+  return placements;
+}
+
+function stripTokensFromMapJson(content: string, images: Set<string>): string {
+  const raw: unknown = JSON.parse(content);
+  if (!isPersistedMapEnvelope(raw) || !raw.state) return content;
+  const objects = raw.state.objects;
+  const tokens = objects?.tokens;
+  if (!objects || !tokens) return content;
+  const removed = Object.entries(tokens).filter(([, token]) => placesImage(images, token.imagePath)).map(([id]) => id);
+  for (const id of removed) delete tokens[id];
+  // Closed maps are edited directly on disk, so detach sheet instances here as the open-store
+  // deleteTokens() path does. Keep each instance and its last-known provider snapshot intact.
+  const sheetInstances = raw.state.sheetInstances;
+  if (sheetInstances && typeof sheetInstances === 'object' && !Array.isArray(sheetInstances)) {
+    const removedIds = new Set(removed);
+    const nextInstances = { ...sheetInstances };
+    for (const [instanceId, instance] of Object.entries(nextInstances)) {
+      if (!instance || typeof instance !== 'object' || !instance.tokenId || !removedIds.has(instance.tokenId)) continue;
+      const { tokenId: _removedTokenId, ...unbound } = instance;
+      nextInstances[instanceId] = unbound;
+    }
+    raw.state.sheetInstances = nextInstances;
+  }
+  // A token's auras go with it, as in an open map.
+  dropAurasOf({ measures: objects.measures, tokens }, removed);
+  return JSON.stringify(raw, null, 2);
+}
+
+/** Removes every placement of the given images from open map views and from map files on disk. */
+export async function removeTokenPlacements(app: App, mapFiles: readonly TFile[], imagePaths: readonly string[]): Promise<void> {
+  const images = new Set(imagePaths.map(normalizeImagePath));
+  const openViews = app.workspace.getLeavesOfType(ATLAS_VIEW_TYPE)
+    .map((leaf) => leaf.view)
+    .filter(isAtlasView);
+
+  for (const mapFile of mapFiles) {
+    const view = openViews.find((v) => v.file?.path === mapFile.path);
+    try {
+      if (view) {
+        const store = view.getStore();
+        const ids = Object.values(store.getState().objects.tokens)
+          .filter((token) => placesImage(images, token.imagePath))
+          .map((token) => token.id);
+        runHistoryTransaction(store, () => store.getState().deleteTokens(ids));
+        await view.saveMap();
+      } else {
+        await app.vault.process(mapFile, (content) => stripTokensFromMapJson(content, images));
+      }
+    } catch (error) {
+      console.error(`[tokenAssetPlacements] Error updating map ${mapFile.path}:`, error);
+    }
+  }
+}

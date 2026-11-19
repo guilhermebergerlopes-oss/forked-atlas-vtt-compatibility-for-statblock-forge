@@ -1,0 +1,369 @@
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { renderEntries, type ContextMenuEntry } from '../components/context-menu/AtlasContextMenu';
+import { useAtlasStore } from '../ViewStoreContext';
+import { LabelTooltip } from '../../packages/components/primitives/tooltip';
+import { t } from '../../i18n';
+import { observeResize } from '../../utils/observeResize';
+import { useMenuFit } from '../components/context-menu/useMenuFit';
+import { portalHost } from '../../host/portalHost';
+
+// Re-export the entry type so consumers only import from this file
+export type { ContextMenuEntry } from '../components/context-menu/AtlasContextMenu';
+
+// ── Context + hook ──────────────────────────────────────────────────────────
+
+export interface ContextMenuOptions {
+  /**
+   * Where focus goes when the menu closes and nothing else took it (a menu
+   * opened from the keyboard, closed with Escape): the menu's own trigger is
+   * a point and cannot hold focus.
+   */
+  returnFocus?: HTMLElement | null;
+  /** Called once the menu closes, however it closed. */
+  onClose?: (() => void) | undefined;
+  /** The menu's name for assistive tech, e.g. "Options of Shieldwall": a menu without one is announced as just "menu". */
+  label?: string | undefined;
+}
+
+export interface ContextMenuController {
+  open: (entries: ContextMenuEntry[], position: { x: number; y: number }, options?: ContextMenuOptions) => void;
+  close: () => void;
+}
+
+const ContextMenuCtx = createContext<ContextMenuController | null>(null);
+
+export const useContextMenu = (): ContextMenuController => {
+  const ctx = useContext(ContextMenuCtx);
+  if (!ctx) throw new Error('useContextMenu must be used inside <ContextMenuProvider>');
+  return ctx;
+};
+
+/** The nearest provider's controller, or null outside every provider (a part rendered on its own in a test). */
+export const useOptionalContextMenu = (): ContextMenuController | null => useContext(ContextMenuCtx);
+
+// ── Global helpers (non-React callers like PIXI renderers) ──────────────────
+
+/**
+ * Every mounted provider registers here. The newest one serves callers outside
+ * React, so a provider that unmounts never disables the ones still on screen.
+ */
+interface RegisteredController extends ContextMenuController {
+  /** The document the provider opens its menus in, once it is rendered. */
+  doc: () => Document | null;
+}
+
+const controllers: RegisteredController[] = [];
+
+export interface GlobalContextMenuOptions extends ContextMenuOptions {
+  /** Opens the menu in this document (a popout's), served by the newest provider rendered there. */
+  doc?: Document | undefined;
+}
+
+function controllersIn(doc: Document): RegisteredController[] {
+  return controllers.filter((controller) => controller.doc() === doc);
+}
+
+/**
+ * Opens a menu for callers outside React; false where no provider is rendered (in that document) to open it.
+ * Without a document, a provider of the focused window serves it, which is the one that was just clicked:
+ * the newest provider may be in another window.
+ */
+export function openContextMenuGlobal(
+  entries: ContextMenuEntry[],
+  position: { x: number; y: number },
+  options?: GlobalContextMenuOptions,
+): boolean {
+  const focused = controllersIn(activeDocument);
+  const inDoc = options?.doc !== undefined ? controllersIn(options.doc) : focused.length > 0 ? focused : controllers;
+  const controller = inDoc[inDoc.length - 1];
+  controller?.open(entries, position, options);
+  return controller !== undefined;
+}
+
+export function closeContextMenuGlobal(): void {
+  for (const controller of controllers) controller.close();
+}
+
+// ── Provider ────────────────────────────────────────────────────────────────
+
+interface MenuState {
+  entries: ContextMenuEntry[];
+  position: { x: number; y: number };
+  returnFocus: HTMLElement | null;
+  collisionBoundary: Element | null;
+  label: string | undefined;
+}
+
+/** The provider's own pane, only where the point lies in it: a menu opened over a body-level overlay belongs to no pane. */
+function leafHolding(anchor: Element | null, point: { x: number; y: number }): Element | null {
+  const leaf = anchor?.closest('.workspace-leaf');
+  if (!leaf) return null;
+  const rect = leaf.getBoundingClientRect();
+  return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom ? leaf : null;
+}
+
+/** Focuses `element` where the menu left focus nowhere (on the body): a choice that moved focus keeps it there. */
+function returnFocusTo(element: HTMLElement | null, event: Event): void {
+  // The virtual trigger is only a point; restore keyboard focus explicitly without scrolling.
+  event.preventDefault();
+  if (!element) return;
+  const active = element.ownerDocument.activeElement;
+  if (element.isConnected && (!active || active === element.ownerDocument.body)) element.focus({ preventScroll: true });
+}
+
+interface FittedMenuProps {
+  /**
+   * Set by the portal around the menu, whose presence watches the element's animations too: without the element it
+   * would take the menu away at once instead of after its fade.
+   */
+  ref?: React.Ref<HTMLDivElement> | undefined;
+  /** The menu's element while it is rendered, for its provider. */
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  pane: Element | null;
+  ownerId: string | undefined;
+  label: string | undefined;
+  onCloseAutoFocus: (event: Event) => void;
+  children: React.ReactNode;
+}
+
+/**
+ * The open menu, beside the point it opened at as an operating system's menus are: to that side it
+ * slides up along the point to stay in its room, where below the point it could only scroll.
+ */
+function FittedMenu({ ref, menuRef, pane, ownerId, label, onCloseAutoFocus, children }: FittedMenuProps): React.ReactElement {
+  const menu = useRef<HTMLDivElement | null>(null);
+  const boundary = useMenuFit(menu, pane);
+  const attach = useCallback((node: HTMLDivElement | null): void => {
+    menu.current = node;
+    menuRef.current = node;
+    if (typeof ref === 'function') ref(node);
+    else if (ref) ref.current = node;
+  }, [menuRef, ref]);
+  return (
+    <DropdownMenu.Content
+      ref={attach}
+      className="atlas-ctx-menu"
+      aria-label={label}
+      data-atlas-owner={ownerId}
+      side="right"
+      align="start"
+      sideOffset={4}
+      avoidCollisions
+      sticky="always"
+      collisionBoundary={boundary}
+      collisionPadding={8}
+      onContextMenu={(e) => e.preventDefault()}
+      onCloseAutoFocus={onCloseAutoFocus}
+    >
+      {children}
+    </DropdownMenu.Content>
+  );
+}
+
+interface ContextMenuProviderProps {
+  children: React.ReactNode;
+  /**
+   * Marks the open menu's content with `data-atlas-owner`, so the surface
+   * that opened it (a statblock panel) knows focus in it is still its own.
+   */
+  ownerId?: string | undefined;
+  /** Serves only the components inside it, never `openContextMenuGlobal`: a surface whose menus belong to it alone. */
+  local?: boolean | undefined;
+}
+
+export const ContextMenuProvider: React.FC<ContextMenuProviderProps> = ({ children, ownerId, local = false }) => {
+  // The last menu opened stays rendered while it fades out after closing (`data-state="closed"` in
+  // atlas-context-menu.scss), so a menu opened again meanwhile turns back from where its fade is
+  // instead of appearing anew.
+  const [menuState, setMenuState] = useState<MenuState | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const menuElement = useRef<HTMLDivElement | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  returnFocus.current = menuState?.returnFocus ?? null;
+  // Atlas' host in the document the provider renders in: a provider in a popout opens its menus there.
+  const [body, setBody] = useState<HTMLElement | null>(null);
+  const anchorElement = useRef<HTMLSpanElement | null>(null);
+  const anchor = useCallback((node: HTMLSpanElement | null): void => {
+    anchorElement.current = node;
+    setBody(node ? portalHost(node.ownerDocument) : null);
+  }, []);
+  const bodyRef = useRef<HTMLElement | null>(null);
+  bodyRef.current = body;
+
+  // The open menu's `onClose`, called once whether it closes or another menu takes its place.
+  const closing = useRef<(() => void) | undefined>(undefined);
+  const told = useCallback((): void => {
+    const onClose = closing.current;
+    closing.current = undefined;
+    onClose?.();
+  }, []);
+
+  // A chosen entry closes the menu at once: what it does may move focus, which the leaving menu's focus trap would take back.
+  const close = useCallback((): void => {
+    told();
+    setIsOpen(false);
+    setMenuState(null);
+  }, [told]);
+  // Escape, a press outside: the menu fades out.
+  const dismiss = useCallback((): void => {
+    told();
+    setIsOpen(false);
+  }, [told]);
+
+  // A fading menu keeps no focus, so keys pressed meanwhile go where they will once it is gone. After the
+  // commit's effects, which release the menu's focus trap.
+  useEffect(() => {
+    const menu = menuElement.current;
+    const active = menu?.ownerDocument.activeElement;
+    if (isOpen || !menu?.isConnected || !(active instanceof HTMLElement) || !menu.contains(active)) return;
+    active.blur();
+    if (returnFocus.current?.isConnected) returnFocus.current.focus({ preventScroll: true });
+  }, [isOpen]);
+
+  const open = useCallback((entries: ContextMenuEntry[], position: { x: number; y: number }, options?: ContextMenuOptions): void => {
+    told();
+    closing.current = options?.onClose;
+    const doc = bodyRef.current?.ownerDocument;
+    // Global callers may be served by a provider in another leaf: use the clicked view.
+    const collisionBoundary = options?.returnFocus?.closest('.workspace-leaf')
+      ?? doc?.elementFromPoint?.(position.x, position.y)?.closest('.workspace-leaf')
+      ?? leafHolding(anchorElement.current, position);
+    setMenuState({ entries, position, returnFocus: options?.returnFocus ?? null, collisionBoundary, label: options?.label });
+    setIsOpen(true);
+  }, [told]);
+
+  useEffect(() => {
+    if (local) return undefined;
+    const controller: RegisteredController = { open, close, doc: () => bodyRef.current?.ownerDocument ?? null };
+    controllers.push(controller);
+    return () => {
+      controllers.splice(controllers.indexOf(controller), 1);
+    };
+  }, [open, close, local]);
+
+  useLayoutEffect(() => {
+    const win = body?.ownerDocument.defaultView;
+    if (!isOpen || !menuState || !win) return undefined;
+    win.addEventListener('resize', close);
+    const boundary = menuState.collisionBoundary;
+    const initial = boundary?.getBoundingClientRect();
+    const stopObserving = boundary && initial ? observeResize([boundary], () => {
+      const { width, height } = boundary.getBoundingClientRect();
+      // ResizeObserver also reports the initial size; opening alone must not dismiss the menu.
+      if (width !== initial.width || height !== initial.height) close();
+    }) : () => undefined;
+    return () => {
+      win.removeEventListener('resize', close);
+      stopObserving();
+    };
+  }, [body, isOpen, menuState, close]);
+
+  const pos = menuState?.position ?? { x: 0, y: 0 };
+  // One object for the provider's life: a new one each time a menu opens or closes re-rendered every component that
+  // opens menus (the toolbar, a library's rows, a grid of moods) in the frame the menu appears in.
+  const controller = useMemo<ContextMenuController>(() => ({ open, close }), [open, close]);
+
+  return (
+    <ContextMenuCtx.Provider value={controller}>
+      {children}
+      <span ref={anchor} hidden />
+      {body && createPortal(
+        <DropdownMenu.Root
+          open={isOpen}
+          onOpenChange={(open) => { if (!open) dismiss(); }}
+        >
+          {/* Virtual trigger: zero-size element at click coordinates. A new point remounts it: the menu's placement
+              follows its anchor element, not that element's style, so a menu opened while one is open would stay put. */}
+          <DropdownMenu.Trigger key={`${pos.x},${pos.y}`} asChild>
+            <div
+              style={{
+                position: 'fixed',
+                top: pos.y,
+                left: pos.x,
+                width: 0,
+                height: 0,
+                pointerEvents: 'none',
+              }}
+            />
+          </DropdownMenu.Trigger>
+
+          {menuState && (
+            <DropdownMenu.Portal container={body}>
+              <FittedMenu
+                menuRef={menuElement}
+                pane={menuState.collisionBoundary}
+                ownerId={ownerId}
+                label={menuState.label}
+                onCloseAutoFocus={(e) => returnFocusTo(menuState.returnFocus, e)}
+              >
+                {renderEntries(menuState.entries, close, { collisionBoundary: menuState.collisionBoundary, container: body })}
+              </FittedMenu>
+            </DropdownMenu.Portal>
+          )}
+        </DropdownMenu.Root>,
+        body,
+      )}
+    </ContextMenuCtx.Provider>
+  );
+};
+
+// ── RingColorGrid (reusable custom menu entry) ──────────────────────────────
+
+export function RingColorGrid({ tokenId, closeMenu }: { tokenId: string; closeMenu: () => void }): React.ReactElement {
+  const setTokenRing = useAtlasStore((state) => state.setTokenRing);
+
+  // Theme colours are read from Obsidian's hex variables; colours Obsidian does
+  // not define fall back to fixed values.
+  const colors: Array<{ name: string; cssVar?: string; fallback: string }> = [
+    { name: t('menu.ring.blue'), cssVar: '--color-blue', fallback: '#086ddd' },
+    { name: t('menu.ring.orange'), cssVar: '--color-orange', fallback: '#ec7500' },
+    { name: t('menu.ring.red'), cssVar: '--color-red', fallback: '#e93147' },
+    { name: t('menu.ring.yellow'), cssVar: '--color-yellow', fallback: '#e0ac00' },
+    { name: t('menu.ring.brown'), fallback: '#a97142' },
+    { name: t('menu.ring.purple'), cssVar: '--color-purple', fallback: '#7852ee' },
+    { name: t('menu.ring.lime'), fallback: '#72ff5b' },
+    { name: t('menu.ring.green'), cssVar: '--color-green', fallback: '#08b94e' },
+    { name: t('menu.ring.pink'), cssVar: '--color-pink', fallback: '#d53984' },
+    { name: t('menu.ring.cyan'), cssVar: '--color-cyan', fallback: '#00bfbc' },
+    { name: t('menu.ring.gray'), fallback: '#ababab' },
+    { name: t('menu.ring.white'), fallback: '#ffffff' },
+  ];
+
+  const resolveHex = (cssVar: string | undefined, fallback: string): string => {
+    if (!cssVar) return fallback;
+    const value = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
+    return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+  };
+
+  const handleSelect = (hex: string | null): void => {
+    setTokenRing(tokenId, hex);
+    closeMenu();
+  };
+
+  return (
+    <div className="atlas-ring-grid">
+      {colors.map((c) => {
+        const hex = resolveHex(c.cssVar, c.fallback);
+        return (
+          <LabelTooltip key={c.name} label={t('menu.ringColour', { name: c.name })}>
+            <button
+              type="button"
+              className="atlas-ring-swatch"
+              style={{ background: hex }}
+              onClick={() => handleSelect(hex)}
+            />
+          </LabelTooltip>
+        );
+      })}
+      <LabelTooltip label={t('menu.clearRing')}>
+        <button
+          type="button"
+          className="atlas-ring-swatch atlas-none"
+          onClick={() => handleSelect(null)}
+        />
+      </LabelTooltip>
+    </div>
+  );
+}

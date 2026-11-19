@@ -1,0 +1,278 @@
+@use '../../../../../../styles/tokens' as *;
+@use '../../../../../../styles/mixins' as *;
+@use '../../../../../../styles/sidebar-dialog' as *;
+@use '../variables' as *;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Token Creator – Settings rail
+// ═══════════════════════════════════════════════════════════════════════════
+
+.atlas-token-creator__rail {
+  @include atlas-sidebar-dialog-side;
+  @include atlas-flex-col($gap: $spacing-l);
+  padding: $spacing-l;
+  overflow-y: auto;
+}
+
+.atlas-token-ring-toggle.btn {
+  flex-shrink: 0;
+}
+
+// The image sources: actions, a verb each, read from their icon on (left-aligned like a menu's rows).
+.atlas-token-creator__source.btn {
+  justify-content: flex-start;
+  gap: $spacing-s;
+
+  svg {
+    flex-shrink: 0;
+    width: $icon-s;
+    height: $icon-s;
+    color: var(--text-muted);
+  }
+}
+
+.atlas-token-creator__section {
+  @include atlas-flex-col($gap: $spacing-s);
+  flex-shrink: 0;
+}
+
+.atlas-token-creator__section-title {
+  @include atlas-flex-row($gap: $spacing-s);
+  justify-content: space-between;
+  height: 24px;
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  color: var(--text-muted);
+}
+
+.atlas-token-creator__count {
+  margin-left: $spacing-xs;
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-normal;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+// ── Drop zone ───────────────────────────────────────────────────────────────
+
+.atlas-token-creator__dropzone {
+  @include atlas-flex-col($gap: $spacing-xs);
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xl $spacing-l;
+  border: $border-width-m solid transparent;
+  border-radius: $radius-m;
+  background: var(--background-modifier-hover);
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  transition: border-color $transition-fast $transition-ease,
+              background-color $transition-fast $transition-ease,
+              transform $transition-press $transition-ease-out;
+
+  &:hover {
+    background: var(--background-modifier-active-hover);
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+  }
+
+  &:active {
+    transform: scale(0.99);
+  }
+
+  &.atlas-dragging {
+    border-color: color-mix(in oklch, var(--interactive-accent) 60%, transparent);
+    background: color-mix(in oklch, var(--interactive-accent) 8%, transparent);
+  }
+
+  .atlas-token-creator__dropzone-icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: $spacing-xs;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in oklch, var(--interactive-accent) 14%, transparent);
+    color: var(--text-accent);
+    transition: transform $transition-normal $transition-ease-out;
+
+    svg {
+      width: $icon-m;
+      height: $icon-m;
+    }
+  }
+
+  .atlas-token-creator__dropzone-title {
+    font-size: $font-ui-small;
+    font-weight: $font-weight-medium;
+    color: var(--text-normal);
+  }
+
+  .atlas-token-creator__dropzone-hint {
+    font-size: $font-ui-smaller;
+    @include am-hint-text;
+  }
+
+  .atlas-token-creator__dropzone-formats {
+    margin-top: $spacing-xs;
+    font-size: $font-ui-smaller;
+    letter-spacing: 0.02em;
+    @include am-hint-text;
+  }
+
+  input[type='file'] {
+    display: none;
+  }
+}
+
+// ── Rows ────────────────────────────────────────────────────────────────────
+
+.atlas-token-creator__row {
+  @include atlas-flex-row($gap: $spacing-s);
+
+  > .btn {
+    flex: 1;
+    min-width: 0;
+    padding: 0 $spacing-s;
+  }
+}
+
+.atlas-token-creator__danger.btn {
+  @include atlas-error-text;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--color-red) 12%, transparent);
+    border-color: color-mix(in oklch, var(--color-red) 30%, transparent);
+    @include atlas-error-text;
+  }
+}
+
+.atlas-token-creator__label-row {
+  @include atlas-flex-row($gap: $spacing-s);
+  justify-content: space-between;
+  font-size: $font-ui-smaller;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.atlas-token-creator__slider-row {
+  @include atlas-flex-row($gap: $spacing-s);
+
+  .slider-root {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+// ── Tags ────────────────────────────────────────────────────────────────────
+
+.atlas-token-creator__search {
+  @include atlas-flex-row($gap: $spacing-xs);
+  height: var(--input-height);
+  padding: 0 $spacing-xs 0 $spacing-s;
+  background: var(--background-modifier-form-field);
+  border: $border-width-s solid $am-control-border;
+  border-radius: $radius-m;
+
+  &:focus-within {
+    border-color: $am-control-border-focus;
+  }
+
+  // The clear button at the field's end.
+  .atlas-collection-header-btn.btn {
+    border-radius: $search-field-button-radius;
+  }
+
+  > svg {
+    width: $icon-xs;
+    height: $icon-xs;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    color: var(--text-normal);
+    font-size: $font-ui-small;
+
+    &::placeholder {
+      color: var(--text-faint);
+    }
+  }
+}
+
+.atlas-token-creator__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-xs;
+}
+
+.atlas-token-creator__chip {
+  appearance: none;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none;
+  @include atlas-flex-row($gap: $spacing-xs);
+  height: 26px;
+  padding: 0 $spacing-s;
+  border-radius: $radius-full;
+  background: var(--background-primary) !important;
+  color: var(--text-muted);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  transition: background-color $transition-fast $transition-ease,
+              color $transition-fast $transition-ease,
+              transform $transition-press $transition-ease-out;
+
+  svg {
+    width: $icon-xs;
+    height: $icon-xs;
+    flex-shrink: 0;
+  }
+
+  &:hover {
+    background: var(--background-modifier-hover) !important;
+    color: var(--text-normal);
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
+
+  &.atlas-selected {
+    background: color-mix(in oklch, var(--interactive-accent) 16%, transparent) !important;
+    @include atlas-accent-text;
+  }
+}
+
+.atlas-token-creator__empty-note {
+  margin: 0;
+  font-size: $font-ui-smaller;
+  line-height: var(--line-height-normal);
+  @include am-hint-text;
+}
+
+// The rail's selects take the window's field edge.
+.atlas-token-creator__rail :is(.atlas-select-trigger, .atlas-setting-dropdown.text-icon-button) {
+  border-color: $am-control-border !important;
+
+
+  &:hover {
+    border-color: $am-control-border-hover !important;
+  }
+
+  &.atlas-open {
+    border-color: $am-control-border-focus !important;
+  }
+}

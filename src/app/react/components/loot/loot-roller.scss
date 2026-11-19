@@ -1,0 +1,137 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// Loot Roller — floating window of the map view (DM only)
+// ═══════════════════════════════════════════════════════════════════════════
+// Imported inside the `.atlas-vtt-plugin` scope of styles/main.scss.
+// Layout: header, then a source list on the left and the roll controls with
+// the result list on the right.
+
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+
+// Default size; the user resizes from the right and bottom edges.
+$loot-width: 1040px;
+$loot-height: 760px;
+$loot-resize-hit: 8px;
+$loot-sidebar-width: 272px;
+$loot-padding: $spacing-m; // loot-lists.scss keeps a copy
+
+.atlas-loot-roller {
+  @include atlas-elevated-surface;
+  @include atlas-panel-radius($surface-radius);
+  position: absolute;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: $loot-width;
+  height: $loot-height;
+  max-width: calc(100% - 2 * #{$spacing-m});
+  max-height: calc(100% - 2 * #{$spacing-m});
+  overflow: hidden;
+  pointer-events: auto;
+  color: var(--text-normal);
+  font-size: $font-ui-small;
+  transform-origin: top center;
+  transition: box-shadow $transition-normal $transition-ease;
+
+  &.is-dragging,
+  &.is-resizing {
+    box-shadow: $shadow-elevated, 0 18px 48px rgba(0, 0, 0, 0.28);
+    user-select: none;
+  }
+}
+
+// ── Resize handles ─────────────────────────────────────────────────────────
+.atlas-loot-roller__resize {
+  @include atlas-floating-resize-handle($loot-resize-hit);
+}
+
+.atlas-loot-roller.is-resizing .atlas-loot-roller__resize--corner::after {
+  opacity: 1;
+}
+
+// ── Header ─────────────────────────────────────────────────────────────────
+// No title and no divider: a strip over the main column (over the whole window
+// while it shows no tables) that drags the window and holds Close in its corner.
+.atlas-loot-roller__header {
+  @include atlas-flex-row($spacing-s);
+  flex-shrink: 0;
+  min-height: calc(#{$close-button-size} + 2 * #{$close-button-gap});
+  // Its top on the sidebar's, so the tabs line up with the search; the end keeps
+  // clear of Close, and the main column's gap stands below it.
+  padding: $loot-padding calc(#{$close-button-size} + #{$close-button-gap} + #{$spacing-s}) 0 $loot-padding;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+
+  .atlas-loot-pane-tabs {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.atlas-loot-roller__close {
+  @include atlas-close-corner;
+}
+
+// Nested `.parent &` would put the `.atlas-vtt-plugin` scope between the two,
+// so rules that depend on an ancestor's state are written out in full.
+.atlas-loot-roller.is-dragging .atlas-loot-roller__header {
+  cursor: grabbing;
+}
+
+// ── Body: sidebar + main ───────────────────────────────────────────────────
+// The sidebar runs the window's full height, as in the asset manager.
+.atlas-loot-roller__body {
+  display: grid;
+  grid-template-columns: $loot-sidebar-width minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.atlas-loot-roller__sidebar {
+  min-height: 0;
+  padding: $loot-padding;
+  overflow-y: auto;
+  border-right: $border-width-s solid var(--divider-color);
+  background: var(--background-secondary);
+}
+
+.atlas-loot-roller__main {
+  @include atlas-flex-col($loot-padding);
+  min-width: 0;
+  min-height: 0;
+  padding: 0 $loot-padding;
+
+  > .atlas-loot-roller__header {
+    margin: 0 (-$loot-padding);
+  }
+}
+
+// ── Shared bits ────────────────────────────────────────────────────────────
+.atlas-loot-section-label {
+  // A label of the interface, never a heading: themes that set a face for headings leave it alone.
+  font-family: var(--font-interface);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.atlas-loot-text-button {
+  appearance: none;
+  height: auto;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--interactive-accent);
+    background: none;
+  }
+}

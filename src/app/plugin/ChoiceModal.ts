@@ -1,0 +1,73 @@
+import { App, Modal } from 'obsidian';
+import { ATLAS_NATIVE_MODAL_CLASSES } from '../ui/nativeModal';
+import { CHOICE_VARIANTS } from '../ui/confirmDialog';
+import { t } from '../i18n';
+import { createAtlasButton } from '../ui/atlasButton';
+
+export interface ChoiceModalButton<T> {
+  text: string;
+  value: T;
+  variant?: 'cta' | 'warning';
+}
+
+export interface ChoiceModalOptions<T> {
+  title: string;
+  /** One paragraph per entry. */
+  message: string[];
+  /** Muted helper text shown below the message. */
+  hint?: string;
+  buttons: ChoiceModalButton<T>[];
+}
+
+/**
+ * Modal that asks the user to pick one of several actions.
+ * Resolves with the picked value, or `null` when dismissed.
+ */
+export class ChoiceModal<T> extends Modal {
+  private choice: T | null = null;
+  private resolveChoice: ((choice: T | null) => void) | null = null;
+
+  constructor(app: App, private readonly options: ChoiceModalOptions<T>) {
+    super(app);
+  }
+
+  public prompt(): Promise<T | null> {
+    return new Promise((resolve) => {
+      this.resolveChoice = resolve;
+      this.open();
+    });
+  }
+
+  onOpen(): void {
+    const { contentEl, options } = this;
+    this.modalEl.addClass(...ATLAS_NATIVE_MODAL_CLASSES);
+    this.setTitle(options.title);
+
+    for (const paragraph of options.message) {
+      contentEl.createEl('p', { text: paragraph });
+    }
+    if (options.hint) {
+      contentEl.createEl('p', { text: options.hint, cls: 'setting-item-description' });
+    }
+
+    const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+    for (const button of options.buttons) {
+      createAtlasButton(buttonContainer, {
+        text: button.text,
+        variant: CHOICE_VARIANTS[button.variant ?? 'plain'],
+        size: 'sm',
+        onClick: () => {
+          this.choice = button.value;
+          this.close();
+        },
+      });
+    }
+    createAtlasButton(buttonContainer, { text: t('common.cancel'), variant: 'outline', size: 'sm', onClick: () => this.close() });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+    this.resolveChoice?.(this.choice);
+    this.resolveChoice = null;
+  }
+}

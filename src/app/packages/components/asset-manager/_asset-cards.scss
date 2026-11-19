@@ -1,0 +1,379 @@
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+@use 'variables' as *;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Asset Manager – Asset card
+// ═══════════════════════════════════════════════════════════════════════════
+// Artwork first: the image fills a square well, the name sits beneath it.
+// The card itself is borderless; hover tints it, selection rings the whole card.
+
+// The card's tooltip lies in the floating layer, outside this namespace: its rules are in `_open-window.scss`.
+
+.atlas-asset-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+  padding: $spacing-xs;
+  border-radius: $radius-m;
+  cursor: pointer;
+  outline: none;
+  color: var(--text-normal);
+  // Hover and selection change at once: a shadow transition repaints every card that changes, for 100 ms each.
+
+  // The ⋯ button beside the card (`CardMoreButton`) lies over its art: the pointer on it is on the card.
+  &:hover,
+  &:has(+ .atlas-asset-card-actions:hover) {
+    background: var(--background-modifier-hover);
+
+    .atlas-asset-card-checkbox {
+      opacity: 1;
+    }
+
+    .atlas-asset-card-name {
+      color: var(--text-normal);
+    }
+  }
+
+  &:active {
+    background: var(--background-modifier-active-hover);
+  }
+
+  &:active .atlas-asset-card-thumb {
+    transform: scale(0.98);
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+  }
+
+  &.atlas-selected {
+    background: color-mix(in oklch, var(--interactive-accent) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--interactive-accent) 45%, transparent);
+
+    .atlas-asset-card-checkbox {
+      opacity: 1;
+    }
+
+    .atlas-asset-card-name {
+      color: var(--text-normal);
+    }
+  }
+}
+
+// ── Artwork well ────────────────────────────────────────────────────────────
+// Rectangular art (maps, scenes) fills the well. Circular art (tokens,
+// encounters) floats on the card, so the well itself stays invisible and the
+// only highlight is the card's hover / selection tint. The art runs to the
+// well's edge, so these cards take more padding to clear the selection ring.
+
+.atlas-asset-card[data-type='tokens'],
+.atlas-asset-card[data-type='encounters'] {
+  gap: $spacing-s;
+  padding: $spacing-s;
+}
+
+.atlas-asset-card[data-type='tokens'] .atlas-asset-card-thumb,
+.atlas-asset-card[data-type='encounters'] .atlas-asset-card-thumb {
+  background: transparent;
+  overflow: visible;
+}
+
+.atlas-asset-card-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  // $spacing-xs inside the card: concentric with its corner.
+  border-radius: $control-inset-radius;
+  background: var(--background-secondary);
+  overflow: hidden;
+  transition: transform $transition-press $transition-ease-out;
+
+  > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  // Shared TokenPortrait; fills the well unless positioned inline.
+  .atlas-token-portrait {
+    position: absolute;
+  }
+
+  > .atlas-token-portrait {
+    inset: 0;
+  }
+
+  .atlas-asset-placeholder-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: $font-ui-large;
+    font-weight: $font-weight-semibold;
+    color: var(--text-faint);
+    user-select: none;
+  }
+
+  // Encounters: up to three overlapping portraits
+  .atlas-encounter-preview {
+    position: absolute;
+    inset: 0;
+
+    // Opaque backing so transparent art doesn't reveal the portrait beneath.
+    // Only framed portraits are circles; unframed art stays cut out, as on
+    // the canvas, instead of sitting on a grey square.
+    .atlas-token-portrait:not(.atlas-token-portrait--unframed) .atlas-token-image-wrapper {
+      background: var(--background-secondary);
+    }
+
+    // A count is status, which the art's top end carries (statblock, animation, spawn count); the bottom end is
+    // the ⋯ button's.
+    .atlas-encounter-preview-overflow {
+      position: absolute;
+      top: $spacing-s;
+      right: $spacing-s;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 $spacing-xs;
+      border-radius: $radius-full;
+      background: var(--background-primary);
+      color: var(--text-muted);
+      font-size: $font-ui-smaller;
+      font-weight: $font-weight-semibold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+
+      // The count is drawn, not written: the card's name holds no text of the hidden art well.
+      &::before {
+        content: attr(data-count);
+      }
+    }
+  }
+}
+
+// ── Caption ─────────────────────────────────────────────────────────────────
+// The name's line, and on a scene card the status line under it (`SceneMarkers`, `_scene-marks.scss`, decision #51):
+// the name keeps the whole first line, and every scene card has the status line, empty or not, so scene cards keep
+// one height.
+
+.atlas-asset-card-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+// ── Name ────────────────────────────────────────────────────────────────────
+
+.atlas-asset-card-name {
+  width: 100%;
+  padding: 0 $spacing-xs;
+  text-align: center;
+  font-size: $font-ui-small;
+  font-weight: $font-weight-medium;
+  line-height: var(--line-height-tight);
+  @include am-hint-text;
+  @include atlas-truncate;
+}
+
+// ── Badges ──────────────────────────────────────────────────────────────────
+
+.atlas-asset-card-checkbox {
+  position: absolute;
+  top: $spacing-s;
+  left: $spacing-s;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity $transition-fast $transition-ease;
+  pointer-events: none;
+
+}
+
+// Drawn like Obsidian's checkbox, but no form control: the card is the grid's one control
+// (an option holds no focusable element), so this box is for the pointer only.
+.atlas-asset-card-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: $border-width-s solid $am-checkbox-border;
+  border-radius: var(--checkbox-radius);
+  background: var(--background-primary);
+  color: var(--checkbox-marker-color);
+  cursor: pointer;
+  pointer-events: auto;
+
+  &.atlas-checked {
+    border-color: var(--checkbox-color);
+    background: var(--checkbox-color);
+  }
+
+  svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 3;
+  }
+}
+
+.atlas-asset-statblock-indicator {
+  position: absolute;
+  top: $spacing-s;
+  right: $spacing-s;
+  z-index: 2;
+  cursor: pointer;
+  transition: transform $transition-fast $transition-ease, color $transition-fast $transition-ease;
+  // As tall as the spawn badge that takes its place.
+  @include atlas-statblock-badge(22px);
+
+  &:hover {
+    color: var(--text-normal);
+    transform: scale(1.1);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  // The linked note is gone: a click links another.
+  &--missing,
+  &--missing:hover {
+    color: var(--text-error);
+  }
+}
+
+// Marks a map whose video plays over its first frame; the card shows that frame.
+.atlas-asset-animated-indicator {
+  position: absolute;
+  top: $spacing-s;
+  right: $spacing-s;
+  z-index: 2;
+  @include atlas-statblock-badge(22px);
+}
+
+// What a map card is, on its art's bottom-left corner (the processing pill takes the right): scenes made from a map
+// share its name and art. A pill of the badges' look, with the card's own text colour.
+.atlas-asset-kind-badge {
+  position: absolute;
+  left: $spacing-s;
+  bottom: $spacing-s;
+  z-index: 2;
+  height: 22px;
+  padding: 0 $spacing-s;
+  display: flex;
+  align-items: center;
+  border-radius: $radius-full;
+  background: var(--background-primary);
+  box-shadow: 0 0 0 $border-width-s var(--background-modifier-border);
+  color: var(--text-normal);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-medium;
+  line-height: 1;
+  pointer-events: none;
+
+  &::before {
+    content: attr(data-label);
+  }
+}
+
+// A map image still being cut into tiles: a quiet pill on the artwork's bottom-right corner,
+// a ring in the accent that fills as tiles land (`ProcessingRing`) and the word beside it. The map works meanwhile.
+.atlas-asset-processing {
+  position: absolute;
+  inset: 0;
+  // Under the checkbox, the tag menu and the badges, which keep their place and the pointer.
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-s;
+  padding: $spacing-s;
+  // A wash greys the artwork under it; the card's controls above it still take the pointer.
+  background: color-mix(in oklch, var(--background-primary) 55%, transparent);
+  color: var(--text-normal);
+  font-size: $font-ui-small;
+  font-weight: var(--font-semibold);
+  line-height: 1;
+  pointer-events: none;
+
+  .atlas-processing-ring {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+.atlas-asset-processing__label {
+  max-width: 100%;
+  @include atlas-truncate;
+}
+
+.atlas-asset-spawn-badge {
+  position: absolute;
+  top: $spacing-s;
+  right: $spacing-s;
+  z-index: 3;
+  @include atlas-flex-row(0);
+  height: 22px;
+  border-radius: $radius-full;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 1px 3px color-mix(in oklch, #{$shadow-color} 40%, transparent);
+  overflow: hidden;
+
+  // The badge's words come from `data-label` (`SpawnCountBadge`).
+  .atlas-spawn-btn::before,
+  .atlas-spawn-count::before {
+    content: attr(data-label);
+  }
+
+  .atlas-spawn-btn {
+    all: unset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 100%;
+    color: inherit;
+    font-size: $font-ui-small;
+    font-weight: $font-weight-bold;
+    cursor: pointer;
+    transition: transform $transition-press $transition-ease-out;
+
+    &:hover {
+      background: color-mix(in oklch, var(--text-on-accent) 18%, transparent);
+    }
+
+    &:active {
+      background: color-mix(in oklch, var(--text-on-accent) 28%, transparent);
+      transform: scale(0.94);
+    }
+  }
+
+  .atlas-spawn-count {
+    font-size: $font-ui-smaller;
+    font-weight: $font-weight-bold;
+    font-variant-numeric: tabular-nums;
+    min-width: 20px;
+    text-align: center;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .atlas-spawn-go {
+    width: auto;
+    padding: 0 $spacing-s;
+    font-size: $font-ui-smaller;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    background: color-mix(in oklch, var(--text-on-accent) 14%, transparent);
+  }
+}

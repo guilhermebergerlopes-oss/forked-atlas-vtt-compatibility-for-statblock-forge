@@ -1,0 +1,226 @@
+import React, { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import { Search, Unlink } from 'lucide-react';
+import { App, TFile } from 'obsidian';
+import { CloseButton } from '../primitives/CloseButton';
+import { Button } from '../primitives/button';
+import { dialogOverlayMotion, useDialogWindowVariants } from '../primitives/dialogMotion';
+import { useDialogEscape } from '../primitives/useDialogEscape';
+import { useFocusTrap } from '../primitives/useFocusTrap';
+import { filterStatblockEntries } from './statblock-link/statblockEntries';
+import { StatblockList } from './statblock-link/StatblockList';
+import { StatblockPreviewPane, type StatblockPreviewToken } from './statblock-link/StatblockPreviewPane';
+import { ForgeStatblockIssueNotice } from './statblock-link/ForgeStatblockIssueNotice';
+import { canLinkForgeStatblockEntryIssue } from './statblock-link/forgeStatblockEntryIssue';
+import { useStatblockEntries, type BestiaryStatus } from './statblock-link/useStatblockEntries';
+import { NewStatblockButton } from '../../../statblocks/editor/create/RoleMenu';
+import type { NewStatblockOption } from '../../../statblocks/editor/create/templateOffers';
+import { t } from '../../../i18n';
+
+interface StatblockLinkModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  /** Only the name, art and current link are shown, so callers without a full asset can use the modal. */
+  asset: StatblockPreviewToken & { statblockPath?: string | undefined };
+  onLink: (statblockPath: string | null) => void;
+  app: App;
+  /** "New statblock…" at the dialog's end, made for this token; absent while the statblock editor is off. */
+  newStatblock?: NewStatblockOption | undefined;
+}
+
+const EMPTY_MESSAGES: Record<Exclude<BestiaryStatus, 'loading'>, React.ReactNode> = {
+  missing: t('am.link.missing'),
+  ready: t('am.link.noNotesFound'),
+};
+
+/** What the list says when it has no rows; nothing while the creatures are read, when placeholder rows stand in. */
+function emptyMessage(hasEntries: boolean, status: BestiaryStatus): React.ReactNode {
+  if (hasEntries) return t('sbImport.noMatch');
+  return status === 'loading' ? null : EMPTY_MESSAGES[status];
+}
+
+/**
+ * Links a token asset to a statblock note (Atlas, Forge or Fantasy Statblocks):
+ * search on the left, the selected note's statblock on the right. Arrow keys move through the
+ * results, Enter or a double click links.
+ */
+const StatblockLinkModal: React.FC<StatblockLinkModalProps> = ({ isOpen, onClose, asset, onLink, app, newStatblock }) => {
+  const { entries, status } = useStatblockEntries(app, isOpen);
+  const linkedPath = asset.statblockPath || null;
+  const [query, setQuery] = useState('');
+  const [selectedPath, setSelectedPath] = useState<string | null>(linkedPath);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const idPrefix = useId();
+  const windowVariants = useDialogWindowVariants();
+  // While the role menu is open, Escape closes the menu only.
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  useDialogEscape(dialogRef, isOpen && !roleMenuOpen ? onClose : undefined);
+  useFocusTrap(dialogRef, isOpen);
+
+  const results = useMemo(() => filterStatblockEntries(entries, query), [entries, query]);
+  // A selection the search hides gives way to the first result.
+  const selectedIndex = results.findIndex((entry) => entry.path === selectedPath);
+  const activeIndex = selectedIndex >= 0 ? selectedIndex : results.length > 0 ? 0 : -1;
+  const activeEntry = results[activeIndex] ?? null;
+  const activePath = activeEntry?.path ?? null;
+  const linkedEntry = linkedPath ? entries.find((entry) => entry.path === linkedPath) ?? null : null;
+  const linkedNoteMissing = useMemo(() => {
+    if (!linkedPath) return false;
+    const file = app.vault.getAbstractFileByPath(linkedPath);
+    return !(file instanceof TFile) || file.extension.toLowerCase() !== 'md';
+  }, [app, linkedPath, entries]);
+  const linkedNoteUnrecognized = Boolean(
+    linkedPath && !linkedNoteMissing && status !== 'loading' && !linkedEntry,
+  );
+  // Rendering a statblock takes a moment; the list keeps up with the keyboard meanwhile.
+  const previewPath = useDeferredValue(activePath);
+  const previewEntry = results.find((entry) => entry.path === previewPath) ?? null;
+  const optionId = (index: number): string => `${idPrefix}-option-${index}`;
+
+  useEffect(() => {
+    if (isOpen) inputRef.current?.focus({ preventScroll: true });
+  }, [isOpen]);
+
+  const link = (path: string | null): void => {
+    onLink(path);
+    onClose();
+  };
+  const choosePath = (path: string): void => {
+    const entry = entries.find((candidate) => candidate.path === path);
+    // Do not create a new token link to a Forge note whose template/link cannot resolve.
+    // Existing links remain untouched and can still be unlinked or replaced.
+    if (!canLinkForgeStatblockEntryIssue(entry?.issue)) return;
+    link(path);
+  };
+  const activeCanLink = Boolean(activePath && canLinkForgeStatblockEntryIssue(activeEntry?.issue));
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (event.nativeEvent.isComposing || results.length === 0) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const next = results[Math.min(results.length - 1, Math.max(0, activeIndex + (event.key === 'ArrowDown' ? 1 : -1)))];
+      if (next) setSelectedPath(next.path);
+    } else if (event.key === 'Enter' && activePath) {
+      event.preventDefault();
+      choosePath(activePath);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const hasEntries = entries.length > 0;
+  const unlinkButton = linkedPath && (
+    <Button variant="ghost" size="sm" className="atlas-statblock-link__unlink" onClick={() => link(null)}>
+      <Unlink />
+      {t('am.link.unlink')}
+    </Button>
+  );
+
+  return (
+    <motion.div {...dialogOverlayMotion} className="atlas-modal-overlay" onClick={onClose}>
+      <motion.div
+        ref={dialogRef}
+        className="atlas-statblock-link"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${idPrefix}-title`}
+        variants={windowVariants}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="atlas-statblock-link__header">
+          <div className="atlas-statblock-link__heading">
+            <h2 id={`${idPrefix}-title`}>{t('am.link.title')}</h2>
+            <span className="atlas-statblock-link__subtitle">For {asset.name}</span>
+          </div>
+          <CloseButton className="atlas-statblock-link__close" onClick={onClose} />
+        </div>
+
+        <div className="atlas-statblock-link__body">
+          <div className="atlas-statblock-link__browser">
+            {linkedNoteMissing && linkedPath && (
+              <div className="atlas-statblock-link__linked-problem" role="alert">
+                <span className="atlas-statblock-link__issue-copy">
+                  <strong>{t('am.link.noteMissingTitle')}</strong>
+                  <span>{t('am.link.noteMissingBody', { path: linkedPath })}</span>
+                </span>
+              </div>
+            )}
+            {linkedNoteUnrecognized && linkedPath && (
+              <div className="atlas-statblock-link__linked-problem" role="alert">
+                <span className="atlas-statblock-link__issue-copy">
+                  <strong>{t('am.link.noteUnrecognizedTitle')}</strong>
+                  <span>{t('am.link.noteUnrecognizedBody', { path: linkedPath })}</span>
+                </span>
+              </div>
+            )}
+            {linkedEntry?.issue && linkedPath !== previewPath && (
+              <ForgeStatblockIssueNotice issue={linkedEntry.issue} compact />
+            )}
+            <div className="atlas-statblock-link__search">
+              <Search aria-hidden />
+              {/* Named without aria-label, which Obsidian shows as its own tooltip. */}
+              <span id={`${idPrefix}-search-label`} hidden>{t('am.link.search')}</span>
+              <input
+                ref={inputRef}
+                type="text"
+                role="combobox"
+                aria-expanded
+                aria-controls={`${idPrefix}-list`}
+                aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
+                aria-labelledby={`${idPrefix}-search-label`}
+                placeholder={t('am.link.searchPlaceholder')}
+                spellCheck={false}
+                autoComplete="off"
+                disabled={!hasEntries}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={handleKeyDown}
+              />
+            </div>
+            <StatblockList
+              id={`${idPrefix}-list`}
+              labelId={`${idPrefix}-title`}
+              entries={results}
+              activePath={activePath}
+              linkedPath={linkedPath}
+              optionId={optionId}
+              onActivate={setSelectedPath}
+              onChoose={choosePath}
+              loading={status === 'loading'}
+              empty={emptyMessage(hasEntries, status)}
+            />
+          </div>
+          <StatblockPreviewPane app={app} path={previewPath} token={asset} entry={previewEntry} />
+        </div>
+
+        <div className="atlas-statblock-link__footer">
+          {newStatblock ? (
+            <div className="atlas-statblock-link__start">
+              <NewStatblockButton
+                className="atlas-statblock-link__new"
+                choices={newStatblock.choices}
+                onMenuOpenChange={setRoleMenuOpen}
+                onChoose={(offer) => {
+                  onClose();
+                  newStatblock.onChoose(offer);
+                }}
+              />
+              {unlinkButton}
+            </div>
+          ) : unlinkButton}
+          <Button variant="outline" size="sm" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button
+            size="sm"
+            disabled={!activeCanLink || activePath === linkedPath}
+            onClick={() => { if (activePath) choosePath(activePath); }}
+          >
+            {t('am.link.link')}
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+export default StatblockLinkModal;

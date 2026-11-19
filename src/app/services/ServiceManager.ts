@@ -1,0 +1,280 @@
+import { MapController } from '../MapController';
+import { App } from 'obsidian';
+import { watchLevelsToRefit } from '../react/components/levels/levelRefitNotice';
+import { followHistoryAcrossLevels } from '../react/components/levels/levelHistoryFollow';
+import type AtlasVTTPlugin from '../../../main';
+import { EventEmitter } from 'events';
+import { RendererService } from './RendererService';
+import { LayerGraph } from './LayerGraph';
+import { UIOverlay } from './UIOverlay';
+import { MapService } from './MapService';
+import { ToolController } from './ToolController';
+import { GridManager } from './GridManager';
+import { NotePreviewUIManager } from './NotePreviewUIManager';
+import { AssetService } from './AssetService';
+import { SettingsService } from './SettingsService';
+import { MAP_THUMBNAIL_SIZE, MapThumbnailService, dataUrlToBytes, type ThumbnailSize } from './MapThumbnailService';
+import { SceneThumbnailUpdater } from './SceneThumbnailUpdater';
+import { WidgetSyncService } from './WidgetSyncService';
+import { SoundEffectService } from './SoundEffectService';
+import { DiceToastObserver } from './DiceToastObserver';
+import type { ViewAtlasStore } from '../storeFactory';
+import { PartySync } from '../campaigns/partyValues/PartySync';
+import { openedDirector } from '../soundDirector/directorRegistry';
+import { pictureView } from '../pixi/mosaicCanvas/levelOfDetail';
+
+/** How long a snapshot waits for the map image's detail before it renders what is drawn. */
+const THUMBNAIL_DETAIL_WAIT_MS = 500;
+
+/**
+ * ServiceManager serves as a central registry for all Atlas services
+ * It provides a single point of access to all services and manages their lifecycle
+ */
+export class ServiceManager {
+  private eventBus: EventEmitter;
+  private rendererService: RendererService;
+  private layerGraph: LayerGraph;
+  private uiOverlay: UIOverlay;
+  private mapService: MapService;
+  private toolController: ToolController;
+  private gridManager: GridManager | null = null;
+  private notePreviewUIManager: NotePreviewUIManager;
+  private assetService: AssetService | null = null;
+  private settingsService: SettingsService;
+  private mapThumbnailService: MapThumbnailService;
+  private widgetSyncService?: WidgetSyncService;
+  private soundEffectService: SoundEffectService;
+  private diceToastObserver: DiceToastObserver;
+  private viewId: string;
+  private sceneThumbnails: SceneThumbnailUpdater;
+  private readonly stopRefitNotice: () => void;
+  private readonly stopHistoryFollow: () => void;
+  
+  constructor(private app: App, private store: ViewAtlasStore, private plugin?: AtlasVTTPlugin, viewId?: string) {
+    // Create event bus for inter-service communication
+    this.eventBus = new EventEmitter();
+    this.eventBus.setMaxListeners(30); // Increase max listeners
+
+    // Store viewId
+    this.viewId = viewId || `view-${Date.now()}`;
+
+    // Share the plugin-wide settings service so every view sees the same settings. A second
+    // instance would take over SettingsService.forApp and save stale values over the file.
+    this.settingsService = plugin?.settingsService ?? SettingsService.forApp(app) ?? new SettingsService(app);
+
+    // Initialize all services with the view store
+    this.rendererService = new RendererService(app, this.eventBus, store, this.viewId, this.settingsService);
+    this.layerGraph = new LayerGraph(this.eventBus);
+    this.uiOverlay = new UIOverlay(app, this.eventBus, store);
+    this.mapService = new MapService(app, this.eventBus, store);
+    // Initialize SoundEffectService before ToolController
+    this.soundEffectService = new SoundEffectService();
+    this.diceToastObserver = new DiceToastObserver(this.soundEffectService, this.settingsService, this.eventBus);
+
+    this.toolController = new ToolController(this.eventBus, app, store);
+
+    this.gridManager = new GridManager(this.eventBus);
+
+    this.notePreviewUIManager = new NotePreviewUIManager(app, this.eventBus, store, this.viewId, plugin?.publicAPI ?? null);
+
+    this.assetService = AssetService.getInstance(app);
+    this.mapThumbnailService = new MapThumbnailService(app);
+
+    void Promise.all([this.settingsService.initialize(), this.assetService.initialize()]);
+    
+    this.stopRefitNotice = watchLevelsToRefit(store);
+    this.stopHistoryFollow = followHistoryAcrossLevels(store);
+    this.sceneThumbnails = new SceneThumbnailUpdater(store, {
+      render: () => this.renderMapThumbnail(),
+      levelShown: () => MapController.showsViewedLevel(this.rendererService.getRenderer()?.getMapImage() ?? null, store.getState()),
+      save: (mapPath, bytes) => this.mapThumbnailService.saveThumbnail(mapPath, bytes),
+      hasThumbnail: (mapPath) => this.mapThumbnailService.hasThumbnail(mapPath),
+    });
+    
+    // Initialize widget sync service if plugin is available
+    if (plugin) {
+      // Get or create singleton widget sync service from plugin
+      plugin.widgetSyncService ??= new WidgetSyncService(plugin);
+      this.widgetSyncService = plugin.widgetSyncService;
+
+      // Register this store with widget sync
+      this.widgetSyncService.registerStore(this.viewId, store);
+      // A timer runs only while a view shows it
+      const widgetSync = this.widgetSyncService;
+      this.eventBus.on('map-unloading', () => widgetSync.leaveScene(this.viewId));
+    }
+
+    // The played campaign's player characters show one set of values in every view
+    PartySync.forApp(app)?.registerStore(this.viewId, store);
+    openedDirector(app)?.joinView(this.viewId, store);
+    
+  }
+  
+  /**
+   * Get the renderer service
+   */
+  public getRendererService(): RendererService {
+    return this.rendererService;
+  }
+  
+  /**
+   * Get the layer graph
+   */
+  public getLayerGraph(): LayerGraph {
+    return this.layerGraph;
+  }
+  
+  /**
+   * Get the UI overlay
+   */
+  public getUIOverlay(): UIOverlay {
+    return this.uiOverlay;
+  }
+  
+  /**
+   * Get the map service
+   */
+  public getMapService(): MapService {
+    return this.mapService;
+  }
+  
+  /**
+   * Get the tool controller
+   */
+  public getToolController(): ToolController {
+    return this.toolController;
+  }
+  
+  /**
+   * Get the grid manager (may be null if gridSystem feature is disabled)
+   */
+  public getGridManager(): GridManager | null {
+    return this.gridManager;
+  }
+
+  /**
+   * Get the note preview UI manager
+   */
+  public getNotePreviewUIManager(): NotePreviewUIManager {
+    return this.notePreviewUIManager;
+  }
+
+  /**
+   * Get the asset service (may be null if assetManager feature is disabled)
+   */
+  public getAssetService(): AssetService | null {
+    return this.assetService;
+  }
+
+  /**
+   * Get the settings service
+   */
+  public getSettingsService(): SettingsService {
+    return this.settingsService;
+  }
+  
+  /**
+   * Get the sound effect service
+   */
+  public getSoundEffectService(): SoundEffectService {
+    return this.soundEffectService;
+  }
+  
+  /**
+   * Get the event bus
+   * This allows services to subscribe to events from other services
+   */
+  public getEventBus(): EventEmitter {
+    return this.eventBus;
+  }
+  
+  /**
+   * Get the store instance for this view
+   */
+
+
+
+  public getStore(): ViewAtlasStore {
+    return this.store;
+  }
+  
+  /** The map as it looks now as JPEG bytes: a scene card thumbnail by default, or `size`, e.g. 16:9 for a snapshot card. */
+  public renderMapThumbnail(size?: ThumbnailSize): ArrayBuffer | null {
+    const renderer = this.rendererService.getRenderer();
+    const pixiApp = renderer?.getAppInstance();
+    const viewport = renderer?.getViewportInstance();
+    if (!renderer || !pixiApp || !viewport) return null;
+
+    const mapRect = renderer.getMapRect();
+    const thumbnailSize = size ?? MAP_THUMBNAIL_SIZE;
+    // What the thumbnail frames (`thumbnailFrame`), for the map image to draw at the thumbnail's own detail
+    const picture = mapRect ? pictureView(mapRect, thumbnailSize) : null;
+    const dataUrl = this.mapThumbnailService.renderThumbnail(
+      pixiApp, viewport, mapRect, thumbnailSize, (frame, render) => renderer.captureSceneFrame(frame, render, picture),
+    );
+    return dataUrl ? dataUrlToBytes(dataUrl) : null;
+  }
+
+  /**
+   * `renderMapThumbnail` once the map image is drawn at the detail the thumbnail's frame needs, or
+   * after a short wait: for a snapshot, whose card is larger than the overview may be sharp for.
+   * Null when the view shows another scene by then, or is loading one (the same scene reloaded too).
+   */
+  public async renderMapThumbnailWhenDrawn(size: ThumbnailSize): Promise<ArrayBuffer | null> {
+    const renderer = this.rendererService.getRenderer();
+    const mapImage = renderer?.getMapImage();
+    const mapRect = renderer?.getMapRect();
+    const picture = mapRect ? pictureView(mapRect, size) : null;
+    if (mapImage && picture) {
+      const { mapPath } = this.store.getState();
+      await mapImage.whenReady(picture.rect, picture.worldPerScreenPixel, THUMBNAIL_DETAIL_WAIT_MS);
+      const scene = this.store.getState();
+      if (scene.mapPath !== mapPath || !scene.mapLoaded || scene.isMapLoading) return null;
+    }
+    return this.renderMapThumbnail(size);
+  }
+
+  /** Writes the scene's thumbnail now if an edit left it out of date; call before the view shows another scene. */
+  public flushSceneThumbnail(): void {
+    this.sceneThumbnails.flush();
+  }
+
+  /** Stops the timers only this view shows; call as the view closes, before its last save. */
+  public stopTimersForClose(): void {
+    this.widgetSyncService?.closeView(this.viewId);
+  }
+
+  /**
+   * Cleanup all services
+   * This should be called when the view is closed
+   */
+  public destroy(): void {
+    // Unregister from widget sync
+    if (this.widgetSyncService) {
+      this.widgetSyncService.unregisterStore(this.viewId);
+    }
+    PartySync.forApp(this.app)?.unregisterStore(this.viewId);
+    openedDirector(this.app)?.leaveView(this.viewId);
+    
+    this.stopRefitNotice();
+    this.stopHistoryFollow();
+
+    // Writes a pending thumbnail, so it must run while the renderer still shows the scene
+    this.sceneThumbnails.destroy();
+
+    // Destroy services in reverse order of dependency
+    this.diceToastObserver.destroy();
+    this.soundEffectService.destroy();
+    this.toolController.destroy();
+    // Ends a load, a grid detection and a new dungeon's reveal, which still hold the renderer's ticker
+    this.mapService.destroy();
+    this.rendererService.destroy();
+    this.layerGraph.destroy();
+    this.uiOverlay.unmount();
+    this.notePreviewUIManager.destroy();
+
+    // Remove all event listeners
+    this.eventBus.removeAllListeners();
+    
+  }
+}

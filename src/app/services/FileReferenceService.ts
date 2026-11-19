@@ -1,0 +1,221 @@
+import type { App } from 'obsidian';
+import { AssetService, Asset } from './AssetService';
+import { isPersistedMapEnvelope } from './MapPersistence';
+import { normalizeImagePath } from '../utils/pathUtils';
+import { moveSceneThumbnail } from './sceneThumbnailFile';
+import { movedFolderPathOf, movedPathOf, rewriteMapReferences, type MovedPath, type PathMove } from './renamedPaths';
+import { SceneSnapshotService } from '../snapshots/SceneSnapshotService';
+import { allSnapshotFiles, hiddenSnapshotFiles } from '../snapshots/sceneSnapshotFolders';
+import { STATBLOCK_IMAGE_KEYS } from './statblockImageKeys';
+import { NoteFieldWriter } from '../statblocks/notes/NoteFieldWriter';
+import type { NotePatch } from '../statblocks/notes/patchTypes';
+import { withMovedTableNotes } from '../randomTables/tableSettings';
+import { workSlices } from '../utils/workSlices';
+import { mayNameMoves } from './movedPathNeedles';
+
+/**
+ * Propagates file path changes (renames/moves) across all storage layers:
+ * - Asset metadata (assets-metadata.json), including scene records of a renamed map
+ * - Map files (.atlasmap token instances and pin targets) and scene snapshots
+ * - Statblock frontmatter (the image fields)
+ * - Collection loot bases and random table notes
+ * - The thumbnail of a renamed map
+ *
+ * The open map is updated separately by its view, from the same vault event.
+ */
+export class FileReferenceService {
+  private app: App;
+
+  constructor(app: App) {
+    this.app = app;
+  }
+
+  /** Called when a vault file is renamed/moved. */
+  async handleFileRenamed(oldPath: string, newPath: string): Promise<void> {
+    await this.handleFilesMoved([{ from: oldPath, to: newPath }]);
+  }
+
+  /**
+   * Propagates moved files to every storage layer that may reference them,
+   * reading each map file and note once however many files moved.
+   */
+  async handleFilesMoved(moves: readonly PathMove[]): Promise<void> {
+    const fileMoves = moves.filter(({ from, to }) => normalizeImagePath(from) !== normalizeImagePath(to));
+    if (fileMoves.length === 0) return;
+    const moved = movedPathOf(fileMoves);
+
+    await this.updateAssetMetadata(moved);
+    await this.updateScenes(moved);
+    for (const { from, to } of fileMoves) await moveSceneThumbnail(this.app, from, to);
+    await this.updateMapFiles(moved, fileMoves);
+    await this.updateStatblockFrontmatter(moved);
+    await this.updateRandomTableSources(moved);
+  }
+
+  /**
+   * Called when a vault folder is renamed/moved. Its files each get their own
+   * rename event; a renamed collection folder also renames the collection.
+   */
+  async handleFolderRenamed(oldPath: string, newPath: string): Promise<void> {
+    const assetService = AssetService.getInstance(this.app);
+    await assetService.initialize();
+    if (await assetService.followCollectionFolderRename(oldPath, newPath)) {
+      this.app.workspace.trigger('atlas-vtt:refresh-assets');
+    }
+  }
+
+  /** Points what maps and snapshots name at or below moved folders (pins rolling a folder of encounters) at the folders' new places. */
+  async followMovedFolders(moves: readonly PathMove[]): Promise<void> {
+    if (moves.length > 0) await this.updateMapFiles(movedFolderPathOf(moves), moves);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Asset metadata
+  // ---------------------------------------------------------------------------
+
+  private async updateAssetMetadata(moved: MovedPath): Promise<boolean> {
+    const assetService = AssetService.getInstance(this.app);
+    await assetService.initialize();
+
+    /** Sets `record[key]` to the moved path; returns whether it moved. */
+    const follow = <K extends string>(record: Partial<Record<K, string | null | undefined>>, key: K): boolean => {
+      const target = moved(record[key]);
+      if (target === null) return false;
+      record[key] = target;
+      return true;
+    };
+
+    return assetService.rewriteAssets((asset: Asset): boolean => {
+      let changed = follow(asset, 'filePath');
+      switch (asset.type) {
+        case 'token':
+          changed = follow(asset, 'imagePath') || changed;
+          changed = follow(asset, 'statblockPath') || changed;
+          break;
+        case 'encounter':
+        case 'player':
+          for (const list of [asset.tokens, asset.data?.tokens]) {
+            for (const token of list ?? []) {
+              changed = follow(token, 'imagePath') || changed;
+              changed = follow(token, 'statblockPath') || changed;
+            }
+          }
+          break;
+        case 'map':
+          changed = follow(asset, 'mapFilePath') || changed;
+          break;
+        case 'note':
+          changed = follow(asset, 'notePath') || changed;
+          break;
+      }
+      return changed;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scenes of a renamed map
+  // ---------------------------------------------------------------------------
+
+  /** Scene records follow their map; a scene named after its file takes the new file name. */
+  private async updateScenes(moved: MovedPath): Promise<void> {
+    const assetService = AssetService.getInstance(this.app);
+    for (const scene of await assetService.getAssets(undefined, 'scene')) {
+      const mapPath = scene.data?.mapPath;
+      const target = moved(mapPath);
+      if (!mapPath || !target?.endsWith('.atlasmap')) continue;
+      await assetService.updateAsset(scene.id, {
+        data: { ...scene.data, mapPath: target },
+        ...(scene.name === basename(mapPath) ? { name: basename(target) } : {}),
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // .atlasmap files
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Rewrites every map and snapshot that names a moved path. Only texts that can name
+   * one are parsed (`mayNameMoves`), and the maps are read in slices, so following
+   * a move costs the frames after it little however large the library.
+   */
+  private async updateMapFiles(moved: MovedPath, moves: readonly PathMove[]): Promise<boolean> {
+    const mapFiles = this.app.vault.getFiles().filter(f => f.extension === 'atlasmap');
+    const snapshots = new SceneSnapshotService(this.app);
+    const mayName = mayNameMoves(moves);
+    const pause = workSlices();
+    let anyChanged = false;
+
+    /** Returns the rewritten map JSON, or null when the map references none of the moved files. */
+    const rewriteMap = (content: string): string | null => {
+      if (!mayName(content)) return null;
+      const mapData: unknown = JSON.parse(content);
+      if (!isPersistedMapEnvelope(mapData)) return null;
+      return rewriteMapReferences(mapData.state, moved) ? JSON.stringify(mapData, null, 2) : null;
+    };
+
+    for (const mapFile of mapFiles) {
+      await pause();
+      try {
+        if (rewriteMap(await this.app.vault.read(mapFile)) !== null) {
+          await this.app.vault.process(mapFile, (latest) => rewriteMap(latest) ?? latest);
+          anyChanged = true;
+        }
+      } catch (error) {
+        console.error(`[FileReferenceService] Error updating map ${mapFile.path}:`, error);
+      }
+    }
+    // Scene snapshots hold the same map state, so they follow renamed files too.
+    const snapshotFiles = [...allSnapshotFiles(this.app), ...await hiddenSnapshotFiles(this.app, mapFiles.map((file) => file.path))];
+    if (await snapshots.rewriteFiles(snapshotFiles, rewriteMap)) anyChanged = true;
+
+    return anyChanged;
+  }
+
+  // ---------------------------------------------------------------------------
+  /** Collections keep rolling on a loot base or a table note after it is renamed or moved. */
+  private async updateRandomTableSources(moved: MovedPath): Promise<void> {
+    const assetService = AssetService.getInstance(this.app);
+    for (const collection of await assetService.getCollections()) {
+      const { lootBases } = collection.settings;
+      const basesMoved = lootBases?.some((path) => moved(path) !== null) ?? false;
+      const randomTables = withMovedTableNotes(collection.settings, moved);
+      if (!basesMoved && !randomTables) continue;
+      await assetService.updateCollectionSettings(collection.id, {
+        ...(basesMoved && lootBases && { lootBases: lootBases.map((path) => moved(path) ?? path) }),
+        ...(randomTables && { randomTables }),
+      });
+    }
+  }
+
+  // Statblock frontmatter (image fields)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Statblock notes name their artwork by vault path in `image` (what Atlas
+   * writes when it links a token), `token` or the older `token-image`. Obsidian keeps
+   * wikilinks there up to date itself, but not plain paths. The cache picks the notes;
+   * the writer rewrites each key the note itself still holds, through its open editor if
+   * it has one, so unsaved typing there is kept.
+   */
+  private async updateStatblockFrontmatter(moved: MovedPath): Promise<void> {
+    const writer = NoteFieldWriter.forApp(this.app);
+    for (const mdFile of this.app.vault.getFiles().filter((file) => file.extension === 'md')) {
+      const frontmatter = this.app.metadataCache.getFileCache(mdFile)?.frontmatter;
+      if (!frontmatter || imagePatches(frontmatter, moved).length === 0) continue;
+      const outcome = await writer.patchNow(mdFile.path, (latest) => imagePatches(latest ?? {}, moved));
+      if (outcome.problem) console.error(`[FileReferenceService] Could not update the image of ${mdFile.path}: ${outcome.problem}`);
+    }
+  }
+}
+
+/** A path change for each image key of a statblock's frontmatter that names a moved file. */
+function imagePatches(frontmatter: Readonly<Record<string, unknown>>, moved: MovedPath): NotePatch[] {
+  return STATBLOCK_IMAGE_KEYS.flatMap((key): NotePatch[] => {
+    const value = frontmatter[key];
+    const target = typeof value === 'string' ? moved(value) : null;
+    return typeof value === 'string' && target !== null ? [{ op: 'set', path: [key], base: value, next: target }] : [];
+  });
+}
+
+const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '');

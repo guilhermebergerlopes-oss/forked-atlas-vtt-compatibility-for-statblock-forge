@@ -1,0 +1,367 @@
+@use '../../../../../../styles/tokens' as *;
+@use '../../../../../../styles/mixins' as *;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Token Creator – Preview card (crop editor)
+// ═══════════════════════════════════════════════════════════════════════════
+// Artwork first. Tokens dim everything outside the circular crop instead of
+// hiding it, so the user always sees what a drag or zoom will bring into view.
+
+// A card in the creator's grid, not a floating surface: its art, fields and zoom buttons stand
+// $surface-inset inside it with a control's corner, and its own corner is theirs plus that inset
+// (no border), so they run concentric with it.
+.atlas-token-card {
+  position: relative;
+  @include atlas-flex-col($gap: $surface-inset);
+  padding: $surface-inset;
+  border-radius: calc(#{$radius-m} + #{$surface-inset});
+  background: var(--background-secondary);
+  animation: atlas-token-card-enter 240ms $transition-ease-out both;
+  animation-delay: calc(var(--atlas-enter-index, 0) * 30ms);
+  transition: background-color $transition-fast $transition-ease;
+
+  // Scrolled back into view: it was on screen before, so it appears as it is
+  &.atlas-token-card--settled {
+    animation: none;
+  }
+
+  &:hover {
+    background: var(--background-modifier-hover);
+
+    .atlas-token-card__check,
+    .atlas-token-card__remove {
+      opacity: 1;
+    }
+  }
+
+  &.atlas-selected {
+    background: color-mix(in oklch, var(--interactive-accent) 10%, transparent);
+
+    .atlas-token-card__art {
+      box-shadow: 0 0 0 2px var(--interactive-accent);
+    }
+
+    .atlas-token-card__check {
+      opacity: 1;
+    }
+  }
+}
+
+@keyframes atlas-token-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+// ── Artwork well ────────────────────────────────────────────────────────────
+
+.atlas-token-card__art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: $radius-m;
+  background: color-mix(in oklch, var(--mono-0) 14%, var(--background-primary));
+  overflow: hidden;
+  transition: box-shadow $transition-fast $transition-ease;
+}
+
+.atlas-token-card__image {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  cursor: grab;
+  touch-action: none;
+
+  &.atlas-dragging {
+    cursor: grabbing;
+  }
+}
+
+.atlas-token-card--map .atlas-token-card__image {
+  cursor: default;
+}
+
+.atlas-token-card__mask {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.atlas-token-card--token .atlas-token-card__mask {
+  display: block;
+  background: color-mix(in oklch, var(--mono-0) 64%, transparent);
+  -webkit-mask-image: radial-gradient(circle closest-side, transparent 0 79.5%, #000 80.5%);
+  mask-image: radial-gradient(circle closest-side, transparent 0 79.5%, #000 80.5%);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 10%;
+    border-radius: 50%;
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklch, var(--mono-100) 24%, transparent),
+      0 0 0 1px color-mix(in oklch, var(--mono-0) 40%, transparent);
+  }
+}
+
+// ── Overlaid controls ───────────────────────────────────────────────────────
+
+.atlas-token-card__check,
+.atlas-token-card__remove {
+  position: absolute;
+  top: $spacing-s;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity $transition-fast $transition-ease,
+              background-color $transition-fast $transition-ease,
+              color $transition-fast $transition-ease,
+              transform $transition-press $transition-ease-out;
+
+  &:focus-visible {
+    opacity: 1;
+  }
+}
+
+.atlas-token-card__check {
+  left: $spacing-s;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklch, var(--mono-0) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--mono-100) 35%, transparent);
+  color: transparent;
+  cursor: pointer;
+
+  svg {
+    width: $icon-xs;
+    height: $icon-xs;
+  }
+
+  &:hover {
+    color: color-mix(in oklch, var(--mono-100) 70%, transparent);
+  }
+
+  &:active {
+    transform: scale(0.9);
+  }
+
+  &.atlas-checked {
+    background: var(--interactive-accent);
+    box-shadow: none;
+    color: var(--text-on-accent);
+  }
+
+  // A finger: the check is a 44 px hit area (WCAG 2.5.5) with the same 22 px disc drawn in its middle, which stays
+  // where it was; touch has no hover, so it always shows.
+  @media (pointer: coarse) {
+    $hit-inset: calc((#{$touch-target} - 22px) / 2);
+    top: calc(#{$spacing-s} - #{$hit-inset});
+    left: calc(#{$spacing-s} - #{$hit-inset});
+    width: $touch-target;
+    height: $touch-target;
+    background: none;
+    box-shadow: none;
+    opacity: 1;
+
+    &::before {
+      position: absolute;
+      inset: $hit-inset;
+      border-radius: 50%;
+      background: color-mix(in oklch, var(--mono-0) 55%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--mono-100) 35%, transparent);
+      content: '';
+    }
+
+    svg {
+      position: relative;
+    }
+
+    &.atlas-checked {
+      background: none;
+
+      &::before {
+        background: var(--interactive-accent);
+        box-shadow: none;
+      }
+    }
+  }
+}
+
+.atlas-token-card__remove {
+  right: $spacing-s;
+
+  &.btn,
+  &.btn--icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: color-mix(in oklch, var(--mono-0) 55%, transparent);
+    color: color-mix(in oklch, var(--mono-100) 70%, transparent);
+  }
+
+  svg {
+    width: $icon-xs;
+    height: $icon-xs;
+  }
+
+  &:hover {
+    background: var(--color-red);
+    color: var(--text-on-accent);
+  }
+
+  &:active {
+    transform: scale(0.9);
+  }
+}
+
+// Holds the art's place while the upload is converted, under the crop mask and the ring.
+.atlas-token-card__pending {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+  pointer-events: none;
+}
+
+// Why an upload cannot be converted, in the art's place: the card never shows such an upload itself.
+.atlas-token-card__refused {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: $spacing-m;
+  display: flex;
+  align-items: center;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.atlas-token-card__badge {
+  position: absolute;
+  right: $spacing-s;
+  bottom: $spacing-s;
+  z-index: 2;
+  padding: 0 $spacing-s;
+  line-height: $count-pill-height;
+  // The hue is the tint and the ring; the number is the text colour, so it reads at AA on any art, in both themes.
+  --atlas-badge-hue: var(--color-green);
+  border-radius: $radius-full;
+  background: color-mix(in oklch, var(--atlas-badge-hue) 18%, var(--background-primary));
+  box-shadow: inset 0 0 0 $border-width-s color-mix(in oklch, var(--atlas-badge-hue) 60%, transparent);
+  color: var(--text-normal);
+  font-size: $font-ui-smaller;
+  font-weight: $font-weight-semibold;
+  font-variant-numeric: tabular-nums;
+  transition: opacity $transition-normal $transition-ease-out;
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+.atlas-token-card__badge--scaled {
+  --atlas-badge-hue: var(--color-orange);
+}
+
+// ── Name + zoom ─────────────────────────────────────────────────────────────
+
+.atlas-token-card__name {
+  @include atlas-text-input;
+  background: transparent;
+  border-color: transparent;
+  text-align: center;
+  font-weight: $font-weight-medium;
+  transition: background-color $transition-fast $transition-ease,
+              border-color $transition-fast $transition-ease,
+              box-shadow $transition-fast $transition-ease;
+
+  &:hover:not(:focus) {
+    background: var(--background-primary);
+  }
+
+  &:focus {
+    background: var(--background-modifier-form-field);
+  }
+}
+
+.atlas-token-card__zoom {
+  @include atlas-flex-row($gap: $spacing-xs);
+
+  .slider-root {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.atlas-token-card__zoom-btn {
+  &.btn,
+  &.btn--icon {
+    width: 24px;
+    height: 24px;
+    border-radius: $radius-m;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  svg {
+    width: $icon-xs;
+    height: $icon-xs;
+  }
+
+  &:hover:not(:disabled) {
+    color: var(--text-normal);
+  }
+}
+
+.atlas-token-card__zoom-value {
+  appearance: none;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  width: 40px;
+  padding: 0;
+  text-align: right;
+  font-size: $font-ui-smaller;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color $transition-fast $transition-ease;
+
+  &:hover {
+    color: var(--text-normal);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-token-card {
+    animation-name: atlas-token-card-fade;
+  }
+
+  @keyframes atlas-token-card-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+.atlas-token-card__ring {
+  position: absolute;
+  inset: 6%;
+  width: 88%;
+  height: 88%;
+  pointer-events: none;
+}
+
+.atlas-token-card__tags {
+  color: var(--text-muted);
+  font-size: $font-ui-smaller;
+  text-align: center;
+  overflow-wrap: anywhere;
+}

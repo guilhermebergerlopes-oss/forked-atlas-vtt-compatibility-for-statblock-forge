@@ -1,0 +1,79 @@
+@use '../../../../../styles/tokens' as *;
+@use '../../../../../styles/mixins' as *;
+@use 'variables' as *;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Asset Manager – Header toolbar
+// ═══════════════════════════════════════════════════════════════════════════
+// One row: [navigation] [asset type] [search · create].
+// The asset type follows the navigation; the room left over lies between it
+// and the search. As room runs short the search narrows first.
+// No column is narrower than its controls, so they can not slide over each
+// other: columns that are too wide leave the toolbar, which `useHeaderCompaction`
+// measures. It then sets `data-compact` step by step until they fit: first the
+// tabs fold into a menu, then the search into a button, and at last the groups
+// wrap onto rows. No width is written down here.
+
+.atlas-asset-manager-header {
+  position: relative;
+  // Above the body (z-index 1), so the menus and search popovers that drop
+  // below the header take clicks.
+  z-index: 2;
+  // No divider line under it: the header's spacing sets it apart from the grid.
+  padding: $spacing-m;
+  min-height: 0;
+}
+
+.atlas-am-toolbar {
+  display: grid;
+  grid-template-columns: max-content minmax(max-content, 1fr) auto;
+  align-items: center;
+  gap: $spacing-m;
+
+  // Rows instead of columns: navigation and actions share the first while they
+  // fit side by side, the asset type takes the last.
+  &[data-compact~='wrap'] {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+
+    .atlas-am-toolbar-right {
+      margin-left: auto;
+    }
+
+    .atlas-am-toolbar-center {
+      order: 1;
+      flex: 0 0 100%;
+      display: flex;
+      justify-content: center;
+      min-width: 0;
+    }
+  }
+}
+
+.atlas-am-toolbar-left {
+  @include atlas-flex-row($gap: $spacing-xs);
+}
+
+// A grid, not a flex row: the search's track is as wide as the search wants
+// (its max-content) yet as narrow as its minimum when room runs short (its
+// min-content), which a flex item with a width can not tell the toolbar.
+.atlas-am-toolbar-right {
+  display: grid;
+  grid-template-columns: minmax(140px, 240px);
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  align-items: center;
+  // The search's border and the filled create button sit closer to the eye than ghost buttons.
+  column-gap: $spacing-s;
+  justify-content: end;
+}
+
+// The search is a button there, which needs no track of its own.
+.atlas-am-toolbar[data-compact~='search'] .atlas-am-toolbar-right {
+  grid-template-columns: none;
+}
+
+.atlas-am-toolbar-center {
+  justify-self: start;
+}

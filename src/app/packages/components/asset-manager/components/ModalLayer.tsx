@@ -1,0 +1,326 @@
+import React, { useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { TokenCreator } from '../TokenCreator';
+import { EncounterBuilder } from '../encounter-builder/EncounterBuilder';
+import TagManager from '../TagManager';
+import CreateSceneModal from '../CreateSceneModal';
+import StatblockLinkModal from '../StatblockLinkModal';
+import InputModal from '../../primitives/InputModal';
+import { CollectionTransferLayer } from '../collection-transfer/CollectionTransferLayer';
+import { CollectionSettingsModal } from '../../../../react/components/CollectionSettingsModal';
+import { CreateCollectionModal } from '../CreateCollectionModal';
+import { MoveModal } from './MoveModal';
+import { CollectionPickerDialog } from './CollectionPickerDialog';
+import { CreateFolderModal } from './CreateFolderModal';
+import type { Tab, TokenAsset } from '../types';
+import type { AssetData } from '../hooks/useAssetData';
+import type { SelectionState } from '../hooks/useSelectionHandlers';
+import type { AssetCrudActions } from '../hooks/useAssetCrud';
+import type { TagsAndCollectionsState } from '../hooks/useTagsAndCollections';
+import type { StatblockLinkState } from '../hooks/useStatblockLink';
+import { useUvttImport } from '../hooks/useUvttImport';
+import { useFloorsChoice } from '../hooks/useFloorsChoice';
+import { UvttFloorsDialog } from './UvttFloorsDialog';
+import { tagGroupOfTab } from '../utils/assetTags';
+import { newStatblockOption } from '../../../../statblocks/editor/create/entryPoints';
+import { openTemplateEditor } from '../../../../statblocks/editor/openTemplateEditor';
+import { isCharacterTab } from '../utils/tabKinds';
+import { creatorForDroppedFiles } from '../utils/droppedFiles';
+import { sharedFolderOf } from '../utils/sharedFolder';
+import { movedWhat, selectionWhat } from '../utils/moveNotice';
+import type { CreatorMode } from '../token-creator/types';
+
+/** Files dropped on the window, which the creator they opened takes as it mounts. */
+interface DroppedFiles {
+  creator: CreatorMode;
+  files: File[];
+}
+
+export interface ModalLayerProps {
+  isOpen: boolean;
+  activeTab: Tab;
+  selectedCollection: string;
+  onClose: () => void;
+  data: AssetData;
+  sel: SelectionState;
+  crud: AssetCrudActions;
+  tags: TagsAndCollectionsState;
+  statblock: StatblockLinkState;
+}
+
+export function ModalLayer({
+  isOpen, activeTab, selectedCollection, onClose, data, sel, crud, tags, statblock,
+}: ModalLayerProps): React.JSX.Element {
+  const floors = useFloorsChoice(isOpen);
+  const [dropped, setDropped] = useState<DroppedFiles | null>(null);
+  const droppedFor = (creator: CreatorMode): { initialFiles?: File[] } => (dropped?.creator === creator ? { initialFiles: dropped.files } : {});
+  const closeMapCreator = (): void => {
+    crud.setIsMapCreatorOpen(false);
+    setDropped(null);
+  };
+  const importMaps = useUvttImport({
+    app: data.app,
+    assetService: data.assetService,
+    isOpen,
+    isMapCreatorOpen: crud.isMapCreatorOpen,
+    // Every dialog of this layer but the map creator, which says for itself whether it stays
+    isBusy: crud.isTokenCreatorOpen || crud.isEncounterBuilderOpen || crud.isCreateSceneModalOpen || crud.isMoveModalOpen || crud.collectionPick !== null || crud.isCreateFolderModalOpen
+      || crud.inputModalState.isOpen || crud.isCreateCollectionModalOpen || crud.settingsModalCollectionId !== null
+      || crud.transfer !== null || tags.isTagManagerOpen || statblock.linkingStatblockAsset !== null,
+    collectionId: selectedCollection,
+    onCreatorFiles: (files) => {
+      const creator = creatorForDroppedFiles(files, activeTab);
+      setDropped({ creator, files });
+      if (creator === 'map') crud.setIsMapCreatorOpen(true);
+      else crud.setIsTokenCreatorOpen(true);
+    },
+    onSceneOpened: () => { closeMapCreator(); onClose(); },
+    chooseFloors: floors.ask,
+  });
+
+  const closeMoveModal = (): void => {
+    crud.setIsMoveModalOpen(false);
+    crud.setMoveTargetFolderId(null);
+    crud.setMoveFolderSearch('');
+    crud.setMoveFolderListOpen(false);
+  };
+
+  // The dialog closes and the cards leave at once: the move shows itself before its files have moved (#30).
+  const confirmMove = async (target: string | null): Promise<void> => {
+    const ids = sel.selectedAssetIds;
+    sel.setSelectedAssetIds([]);
+    closeMoveModal();
+    await crud.moveAssetsToFolder(ids, target);
+  };
+
+  const reloadAfterCreator = async (): Promise<void> => {
+    if (data.assetService) {
+      await data.loadAssetsForActiveTab();
+      await data.reloadGlobalTags();
+    }
+  };
+
+  // Each presence keeps its dialog mounted until the dialog has animated out.
+  return (
+    <>
+      <CollectionTransferLayer
+        transfer={crud.transfer}
+        confirmExport={crud.confirmExport}
+        confirmImport={crud.confirmImport}
+        closeTransfer={crud.closeTransfer}
+      />
+
+      {/* Token Creator */}
+      <AnimatePresence>
+        {isOpen && crud.isTokenCreatorOpen && (
+          <TokenCreator
+            isOpen={crud.isTokenCreatorOpen}
+            selectedCollection={selectedCollection}
+            playerCharacters={activeTab === 'party'}
+            {...droppedFor('token')}
+            onClose={() => {
+              crud.setIsTokenCreatorOpen(false);
+              crud.setEditingToken(null);
+              setDropped(null);
+              if (isCharacterTab(activeTab)) void reloadAfterCreator();
+            }}
+            editToken={crud.editingToken ? {
+              id: crud.editingToken.id,
+              name: crud.editingToken.name,
+              imageUrl: (crud.editingToken as TokenAsset).imageUrl,
+              imagePath: (crud.editingToken as TokenAsset).imagePath,
+              tags: crud.editingToken.tags || [],
+              showRing: (crud.editingToken as TokenAsset).showRing ?? true,
+              size: (crud.editingToken as TokenAsset).size,
+            } : null}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Map Creator */}
+      <AnimatePresence>
+        {isOpen && crud.isMapCreatorOpen && (
+          <TokenCreator
+            isOpen={crud.isMapCreatorOpen}
+            mode="map"
+            onImportMaps={importMaps}
+            {...droppedFor('map')}
+            selectedCollection={selectedCollection}
+            onClose={() => {
+              closeMapCreator();
+              if (activeTab === 'maps') void reloadAfterCreator();
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Encounter Builder */}
+      <AnimatePresence>
+        {isOpen && crud.isEncounterBuilderOpen && (
+          <EncounterBuilder
+            key={crud.editingEncounter?.id ?? 'new'}
+            app={data.app}
+            assetService={data.assetService}
+            collectionId={selectedCollection}
+            editEncounter={crud.editingEncounter}
+            onClose={crud.closeEncounterBuilder}
+            onSaved={() => { if (activeTab === 'encounters') void reloadAfterCreator(); }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Move Modal */}
+      <AnimatePresence>
+        {crud.isMoveModalOpen && (
+          <MoveModal
+            selectedAssetIds={sel.selectedAssetIds}
+            movingWhat={selectionWhat(data.assets, sel.selectedAssetIds)}
+            folders={data.folders}
+            activeTab={activeTab}
+            moveTargetFolderId={crud.moveTargetFolderId}
+            setMoveTargetFolderId={crud.setMoveTargetFolderId}
+            moveFolderSearch={crud.moveFolderSearch}
+            setMoveFolderSearch={crud.setMoveFolderSearch}
+            moveFolderListOpen={crud.moveFolderListOpen}
+            setMoveFolderListOpen={crud.setMoveFolderListOpen}
+            onClose={closeMoveModal}
+            onConfirm={(target) => { void confirmMove(target); }}
+            currentFolderId={sharedFolderOf(data.assets, sel.selectedAssetIds)}
+            isFolderNameTaken={crud.isFolderNameTaken}
+            onCreateFolder={crud.createFolderInVault}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Move or Copy to collection… */}
+      <AnimatePresence>
+        {crud.collectionPick && (
+          <CollectionPickerDialog
+            mode={crud.collectionPick.mode}
+            movingWhat={movedWhat(crud.collectionPick.assets)}
+            assetIds={crud.collectionPick.assets.map((asset) => asset.id)}
+            collections={data.collections}
+            currentCollectionId={selectedCollection}
+            onClose={() => crud.setCollectionPick(null)}
+            onConfirm={(target) => {
+              const pick = crud.collectionPick;
+              crud.setCollectionPick(null);
+              pick?.transfer(target);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Create Folder Modal */}
+      <AnimatePresence>
+        {crud.isCreateFolderModalOpen && (
+          <CreateFolderModal
+            selectedFolderId={sel.selectedFolderId}
+            activeTab={activeTab}
+            targetFolderName={crud.targetFolderName}
+            setTargetFolderName={crud.setTargetFolderName}
+            onClose={() => { crud.setIsCreateFolderModalOpen(false); crud.setTargetFolderName(''); }}
+            onConfirm={() => { void crud.createFolderInVault(crud.targetFolderName.trim()); }}
+            isNameTaken={crud.isFolderNameTaken}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Tag Manager */}
+      <TagManager
+        isOpen={tags.isTagManagerOpen}
+        onClose={() => tags.setIsTagManagerOpen(false)}
+        tags={data.tagsByGroup}
+        initialTab={tagGroupOfTab(activeTab)}
+        collections={data.collections}
+        onCreateTag={(group, tag) => { void tags.handleCreateTag(group, tag); }}
+        onCreateCollection={crud.handleCreateCollection}
+        onUpdateTag={tags.handleUpdateTag}
+        onUpdateCollection={tags.handleUpdateCollection}
+        onDeleteTag={tags.handleDeleteTag}
+        onDeleteCollection={tags.handleDeleteCollection}
+      />
+
+      {/* Statblock Link Modal */}
+      <AnimatePresence>
+        {statblock.linkingStatblockAsset && (
+          <StatblockLinkModal
+            isOpen={true}
+            onClose={statblock.closeStatblockLinkModal}
+            asset={statblock.linkingStatblockAsset}
+            onLink={(statblockPath) => { void statblock.handleLinkStatblock(statblockPath); }}
+            app={data.app}
+            newStatblock={newStatblockOption(data.app, {
+              collectionId: selectedCollection,
+              from: 'asset-manager',
+              token: {
+                imagePath: statblock.linkingStatblockAsset.imagePath ?? statblock.linkingStatblockAsset.imageUrl,
+                name: statblock.linkingStatblockAsset.name,
+              },
+              // The pair opens in the workspace this window covers.
+              onStart: onClose,
+            })}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Input Modal (rename, etc.) */}
+      <InputModal
+        isOpen={crud.inputModalState.isOpen}
+        onClose={() => crud.setInputModalState({ ...crud.inputModalState, isOpen: false })}
+        title={crud.inputModalState.title}
+        placeholder={crud.inputModalState.placeholder}
+        defaultValue={crud.inputModalState.defaultValue}
+        onConfirm={crud.inputModalState.onConfirm}
+        validation={crud.inputModalState.validation}
+      />
+
+      {/* Create Scene Modal */}
+      <AnimatePresence>
+        {isOpen && crud.isCreateSceneModalOpen && (
+          <CreateSceneModal
+            isOpen={crud.isCreateSceneModalOpen}
+            onClose={() => crud.setIsCreateSceneModalOpen(false)}
+            selectedCollection={selectedCollection}
+            assetService={data.assetService}
+            backgroundPath={crud.createScenePrefill?.backgroundPath ?? null}
+            defaultName={crud.createScenePrefill?.defaultName ?? ''}
+            onSceneCreated={onClose}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Create Collection */}
+      <AnimatePresence>
+        {crud.isCreateCollectionModalOpen && (
+          <CreateCollectionModal
+            existingNames={data.collections.map((collection) => collection.name)}
+            onClose={() => crud.setIsCreateCollectionModalOpen(false)}
+            onCreated={(collectionId) => { void crud.showCreatedCollection(collectionId); }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Collection Settings */}
+      <AnimatePresence>
+        {crud.settingsModalCollectionId && (
+          <CollectionSettingsModal
+            isOpen={true}
+            onClose={() => crud.setSettingsModalCollectionId(null)}
+            collectionId={crud.settingsModalCollectionId}
+            // The template opens in a tab, which the asset manager would cover.
+            onEditTemplate={(templateId, collectionId) => {
+              onClose();
+              void openTemplateEditor(data.app, { templateId, collectionId });
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Map files as the floors of one scene: last, so it opens over the map creator that may hold them */}
+      <AnimatePresence>
+        {isOpen && floors.request && <UvttFloorsDialog request={floors.request} onChoose={floors.answer} />}
+      </AnimatePresence>
+    </>
+  );
+}

@@ -1,0 +1,193 @@
+import { NOTE_FILE_ROLES, type BundleFile, type BundleFileRole } from './bundleFormat';
+import { movedFolders, remapPaths, type PathMap } from './pathRemap';
+import { COLLECTIONS_DIR } from '../assetPaths';
+import { NO_TEMPLATE_IDS, rewriteNoteTemplate, type TemplateIdMap } from '../../statblocks/bundles/bundleTemplateIds';
+import { sha256 } from '../../utils/hashing';
+import { mapStrings } from '../../utils/mapStrings';
+import { isRecord } from '../../utils/guards';
+import { FORGE_SHEET_PROVIDER_ID } from '../providerStatblockPreview';
+
+/** JSON files carry vault paths and asset ids that must follow the files and records they point at. */
+const JSON_ROLES: ReadonlySet<BundleFileRole> = new Set<BundleFileRole>(['asset-file', 'scene-map', 'scene-snapshot']);
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+/** `text` as UTF-8 bytes in an ArrayBuffer of their own. */
+export function toBuffer(text: string): ArrayBuffer {
+  const bytes = encoder.encode(text);
+  // Copy into a fresh ArrayBuffer: TextEncoder's view may sit on a shared or offset buffer.
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
+/** The indentation `text` was written with, so a rewrite keeps the file's layout and a round trip its exact bytes. */
+function indentationOf(text: string): string | undefined {
+  return /^[[{]\r?\n([ \t]+)\S/.exec(text)?.[1];
+}
+
+const withFoldersOf = new WeakMap<PathMap, PathMap>();
+
+/**
+ * `rewrites` with the collection folders that moved along with their files: a pin that rolls a
+ * folder of encounters names the folder (`…/encounters/Forest`), which follows its encounters into
+ * the collection's folder under another name. Only folders inside `atlas-vtt/collections/`: a
+ * folder elsewhere has a plain name (`NPCs`) that a label or tag may hold as well. Worked out once
+ * per map, since every JSON file asks.
+ */
+function withMovedFolders(rewrites: PathMap): PathMap {
+  let map = withFoldersOf.get(rewrites);
+  if (!map) {
+    const folders = [...movedFolders(rewrites)].filter(([folder]) => folder.startsWith(`${COLLECTIONS_DIR}/`));
+    map = new Map([...folders, ...rewrites]);
+    withFoldersOf.set(rewrites, map);
+  }
+  return map;
+}
+
+function rewriteJson(text: string, rewrites: PathMap): string {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    const original = JSON.stringify(parsed);
+    const moved = withMovedFolders(rewrites);
+    const protectedValues = new Map<string, string>();
+    const definitions: Array<{ instanceId: string; providerId: string; definition: Record<string, unknown> }> = [];
+    let placeholderIndex = 0;
+    const placeholder = (): string => {
+      let value = `__ATLAS_OPAQUE_SHEET_VALUE_${placeholderIndex++}__`;
+      while (original.includes(value) || protectedValues.has(value)) value = `__ATLAS_OPAQUE_SHEET_VALUE_${placeholderIndex++}__`;
+      return value;
+    };
+
+    // Provider source IDs are opaque by contract. Protect non-Forge source IDs from
+    // the generic vault-path rewrite. Provider definitions are provider-owned data too;
+    // restore them after remapping, changing only Forge's documented note-path identity.
+    if (isRecord(parsed) && isRecord(parsed.state) && isRecord(parsed.state.sheetInstances)) {
+      for (const [instanceId, candidate] of Object.entries(parsed.state.sheetInstances)) {
+        if (!isRecord(candidate)) continue;
+        const source = candidate.source;
+        if (isRecord(source) && source.providerId !== FORGE_SHEET_PROVIDER_ID && typeof source.sourceId === 'string') {
+          const token = placeholder();
+          protectedValues.set(token, source.sourceId);
+          source.sourceId = token;
+        }
+        const definition = candidate.lastKnownDefinition;
+        if (isRecord(definition) && typeof definition.providerId === 'string') {
+          const providerId = definition.providerId;
+          const token = placeholder();
+          definitions.push({ instanceId, providerId, definition });
+          candidate.lastKnownDefinition = token;
+        }
+      }
+    }
+
+    const remapped = remapPaths(parsed, moved);
+    const restored = mapStrings(remapped, (value) => protectedValues.get(value) ?? value);
+    if (isRecord(restored) && isRecord(restored.state) && isRecord(restored.state.sheetInstances)) {
+      for (const { instanceId, providerId, definition } of definitions) {
+        const instance = restored.state.sheetInstances[instanceId];
+        if (!isRecord(instance)) continue;
+        const restoredDefinition = { ...definition };
+        if (providerId === FORGE_SHEET_PROVIDER_ID && typeof restoredDefinition.sourceId === 'string') {
+          restoredDefinition.sourceId = moved.get(restoredDefinition.sourceId) ?? restoredDefinition.sourceId;
+        }
+        instance.lastKnownDefinition = restoredDefinition;
+      }
+    }
+
+    if (JSON.stringify(restored) === original) return text;
+    return JSON.stringify(restored, null, indentationOf(text)) + (text.endsWith('\n') ? '\n' : '');
+  } catch {
+    return text;
+  }
+}
+
+const FRONTMATTER = /^(---\r?\n)([\s\S]*?)(\r?\n---)/;
+
+/** Points the note's artwork field at where the artwork now lives; only a single-line value is rewritten. */
+function relinkStatblockNote(file: BundleFile, text: string, rewrites: PathMap): string {
+  const image = file.statblockImage;
+  const target = image && rewrites.get(image.path);
+  if (!image || !target) return text;
+  const frontmatter = FRONTMATTER.exec(text);
+  if (!frontmatter) return text;
+  // The manifest check limits the key to the statblock image fields, so it is safe inside the pattern.
+  const line = new RegExp(`^${image.key}:[ \\t]*\\S[^\\n]*$`, 'm').exec(frontmatter[2]!);
+  if (!line) return text;
+  // Splice at the matched line: a plain replace would hit the first equal text and expand `$` patterns in the path.
+  const start = frontmatter.index + frontmatter[1]!.length + line.index;
+  return `${text.slice(0, start)}${image.key}: ${JSON.stringify(target)}${text.slice(start + line[0].length)}`;
+}
+
+/** A quoted text without quotes inside, so the folder in `'file.inFolder("Items")'` is found within the quoted filter. */
+const QUOTED = /(["'])([^"'\n]+)\1/g;
+
+/** What stands before a quoted path in a base: `file.inFolder(`, or `file.folder` / `file.path` compared or asked (`.startsWith(`). */
+const PATH_CONTEXT = /(?:\.inFolder\(|file\.(?:folder|path)(?:\.\w+\()?\s*(?:[=!]=)?)\s*$/;
+
+/**
+ * Points the folders and files a base names at where they now are. A base
+ * finds its notes by path (`file.inFolder("Items/Armor")`), so each quoted
+ * path that moved is replaced where the base asks for a path; a tag or a
+ * property value that reads like a moved folder is left alone.
+ */
+function relinkLootBase(text: string, rewrites: PathMap): string {
+  const folders = movedFolders(rewrites);
+  return text.replace(QUOTED, (literal: string, quote: string, value: string, offset: number) => {
+    const path = value.endsWith('/') ? value.slice(0, -1) : value;
+    const target = rewrites.get(path) ?? folders.get(path);
+    if (!target || !PATH_CONTEXT.test(text.slice(Math.max(0, offset - 80), offset))) return literal;
+    return `${quote}${target}${value.slice(path.length)}${quote}`;
+  });
+}
+
+/** `text` of a file that `refersToFiles`, with the paths and ids it refers to rewritten; `text` itself when nothing changes. */
+export function rewriteText(file: BundleFile, text: string, rewrites: PathMap): string {
+  if (JSON_ROLES.has(file.role)) return rewriteJson(text, rewrites);
+  if (file.role === 'statblock-note') return relinkStatblockNote(file, text, rewrites);
+  if (file.role === 'loot-base') return relinkLootBase(text, rewrites);
+  return text;
+}
+
+/**
+ * `raw` with the paths and ids it refers to rewritten: JSON files follow moved
+ * files and renamed records, statblock notes follow their artwork, loot bases
+ * the folders of their items, and notes name the templates they use by their id
+ * here (`templateIds`, the bundle's own notes only: callers pass none for notes
+ * the vault keeps). Returns `raw` itself when nothing changes, so unchanged files
+ * keep their exact bytes.
+ */
+export function rewriteContent(file: BundleFile, raw: ArrayBuffer, rewrites: PathMap, templateIds: TemplateIdMap = NO_TEMPLATE_IDS): ArrayBuffer {
+  if (!mayRewrite(file, rewrites, templateIds)) return raw;
+  const text = decoder.decode(raw);
+  const relinked = refersToFiles(file) ? rewriteText(file, text, rewrites) : text;
+  const rewritten = namesTemplates(file) ? rewriteNoteTemplate(relinked, templateIds) : relinked;
+  return rewritten === text ? raw : toBuffer(rewritten);
+}
+
+/** Whether the file is text that refers to other files or records: JSON, a statblock note that shows artwork, or a loot base. */
+export const refersToFiles = (file: BundleFile): boolean =>
+  JSON_ROLES.has(file.role) || file.role === 'loot-base' || (file.role === 'statblock-note' && file.statblockImage !== undefined);
+
+/** Whether the file is a Markdown note, which may name a statblock template; a loot item may be any file. */
+const namesTemplates = (file: BundleFile): boolean => NOTE_FILE_ROLES.has(file.role) && file.vaultPath.toLowerCase().endsWith('.md');
+
+/** Whether `rewriteContent` may change the file's bytes, so they must be read to know the result. */
+export const mayRewrite = (file: BundleFile, rewrites: PathMap, templateIds: TemplateIdMap = NO_TEMPLATE_IDS): boolean =>
+  (rewrites.size > 0 && refersToFiles(file)) || (templateIds.size > 0 && namesTemplates(file));
+
+const NO_PATHS: PathMap = new Map();
+
+/**
+ * Fingerprint of a bundle file as it reads in this vault: `hash` (the file's bytes), unless the
+ * file is a note naming a template that comes in under another id (`templateIds`), which then
+ * reads as naming that id. So a note follows its template into a copy though the bundle did
+ * not change the note.
+ */
+export async function hashHere(file: BundleFile, hash: string, raw: () => Promise<ArrayBuffer>, templateIds: TemplateIdMap): Promise<string> {
+  if (!mayRewrite(file, NO_PATHS, templateIds)) return hash;
+  const content = await raw();
+  const here = rewriteContent(file, content, NO_PATHS, templateIds);
+  return here === content ? hash : sha256(here);
+}

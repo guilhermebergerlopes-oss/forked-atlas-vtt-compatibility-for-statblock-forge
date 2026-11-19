@@ -1,0 +1,101 @@
+@use '../../../../styles/tokens' as *;
+
+.atlas-map-loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--background-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999999;
+    // Timing comes from MapLoadingOverlay. Transitions (not keyframes) so a load that ends
+    // during the reveal delay never shows the overlay at all.
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+        opacity var(--atlas-map-loading-fade) $transition-ease-out,
+        visibility 0s linear var(--atlas-map-loading-fade);
+    // The overlay stays mounted between loads; don't keep spinning while it is hidden
+    --atlas-spinner-play-state: paused;
+
+    &.atlas-map-loading-overlay--active {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transition:
+            opacity var(--atlas-map-loading-fade) $transition-ease-out var(--atlas-map-loading-reveal-delay),
+            visibility 0s;
+        --atlas-spinner-play-state: running;
+    }
+
+    // Vignette for depth
+    &::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.1) 100%);
+        pointer-events: none;
+    }
+}
+
+.theme-dark .atlas-map-loading-overlay::before {
+    background: radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.2) 100%);
+}
+
+.atlas-map-loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: $spacing-l;
+    position: relative;
+    z-index: 1;
+    // Settles into place as the overlay fades in
+    transform: scale(0.96);
+    transition: transform var(--atlas-map-loading-fade) $transition-ease-out;
+
+    .atlas-map-loading-overlay--active & {
+        transform: none;
+        transition-delay: var(--atlas-map-loading-reveal-delay);
+    }
+}
+
+.atlas-map-loading-text {
+    display: grid;
+    justify-items: center;
+    margin-top: $spacing-s;
+    color: var(--text-muted);
+    font-size: $font-ui-small;
+    font-weight: $font-weight-medium;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+
+    > * {
+        grid-area: 1 / 1;
+    }
+}
+
+.atlas-map-loading-progress {
+    width: 160px;
+    height: 2px;
+    border-radius: $radius-full;
+    background: color-mix(in oklch, var(--text-normal) 8%, transparent);
+
+    .atlas-map-loading-progress-bar {
+        height: 100%;
+        border-radius: inherit;
+        background: var(--interactive-accent);
+        box-shadow: 0 0 8px color-mix(in oklch, var(--interactive-accent) 70%, transparent);
+        transform-origin: left center;
+        transition: transform 400ms $transition-ease-out;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .atlas-map-loading-content {
+        transform: none;
+    }
+}

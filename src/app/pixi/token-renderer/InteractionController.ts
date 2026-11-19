@@ -1,0 +1,993 @@
+/**
+ * Token Interaction Controller
+ * 
+ * Handles all pointer interactions with tokens including drag & drop,
+ * hover effects, context menus, and path recording for smooth animations.
+ */
+
+import type { ResourceDefsProvider } from '../../resources/resourceTypes';
+import { isKillable } from '../../resources/resourceValues';
+import { visibleResources } from '../../resources/visibleResources';
+import React from 'react';
+import { Container, FederatedPointerEvent } from 'pixi.js';
+import { Viewport } from 'pixi-viewport';
+import { App } from 'obsidian';
+import { openEditTokenModal } from './EditTokenModal';
+import { openContextMenuGlobal, closeContextMenuGlobal, type ContextMenuEntry } from '../../react/root/ContextMenuContext';
+import { DestructiveActionRow } from './DestructiveActionRow';
+import type { ITokenInteractionController, TokenGroupContainer } from './types';
+import type { Character, TokenEntity } from '../../types';
+import type { ViewAtlasState } from '../../storeFactory';
+import type { StoreApi } from 'zustand';
+import type { GridSystem } from '../../grid/GridSystem';
+import { resizedTokenCenter } from '../../grid/gridPlacement';
+import { beginHistoryTransaction, endHistoryTransaction } from '../../stores/history';
+import { initiativeEntryForToken } from '../../stores/initiativeEntries';
+import { EventEmitter } from 'events';
+import { StatblockDialogService } from '../../services/StatblockDialogService';
+import { AssetService } from '../../services/AssetService';
+import { createStatblockEntry, newStatblockOption, type EntryContext, type TokenCreationContext } from '../../statblocks/editor/create/entryPoints';
+import { TokenStatblockLinkService } from '../../services/TokenStatblockLinkService';
+import type { ConditionDefinition } from '../../types/collectionSettingsTypes';
+import { saveMapTokensAsEncounter } from '../../encounters/saveMapTokensAsEncounter';
+import { copyMapObjects } from '../../clipboard/mapClipboardActions';
+import { copyDragSelection } from './dragCopy';
+import type { DragRuler } from './DragRuler';
+import type { TokenMovement } from './tokenMovement';
+import { runInBackground } from '../../utils/backgroundTask';
+import { isPrimaryPress, isSecondaryPress } from '../utils/pointerButtons';
+import { tokenSizeSubmenu } from '../../react/components/context-menu/tokenSizeMenu';
+import { tokenMovementSubmenu } from '../../react/components/context-menu/tokenMovementMenu';
+import { tokenLevelSubmenu } from '../../react/components/context-menu/tokenLevelMenu';
+import { tokenHeightSubmenu } from '../../react/components/context-menu/tokenHeightMenu';
+import { tokenAuraSubmenu } from '../../react/components/context-menu/tokenAuraMenu';
+import { mapMeasurementSettings } from '../../services/mapMeasurementSettings';
+import { rulesLookup } from '../../services/mapRules';
+import { tokenLightingEntries } from '../../react/components/context-menu/tokenLightingMenu';
+import { mapLightPresets } from '../../services/mapCollectionRules';
+import { conditionsSubmenu } from '../../react/components/context-menu/conditionsMenu';
+import { applySelectionResourceChange, selectionResourceEntry } from '../../react/components/context-menu/selectionResourceMenu';
+import { selectionResources, type SelectionResource } from '../../resources/selectionResourceChange';
+import { SelectionResourceEditing } from '../selectionResourceEditor';
+import { holdTokens } from '../../lighting/sightOnDrop';
+import { dropTokensOnStairs, type StairsMenuPlace } from './stairsDrop';
+import type { TokenPreviewAnchor } from '../../services/NotePreviewUIManager';
+import type { ArtFloors } from '../../levels/levelSurfaces';
+import { t } from '../../i18n';
+import { levelObjects } from '../../levels/levelObjects';
+import { mapTokens } from '../../tokens/offMap';
+import type { MapSize } from '../../online/gm/moveCheck';
+import { sessionDragWalls, type SessionDragWalls } from './sessionDragWalls';
+
+interface DragState {
+  isDragging: boolean;
+  dragIds: string[];
+  dragStartPointer: { x: number; y: number };
+  /** Where the pointer was last seen, in world pixels: a drag whose pointer is lost drops there. */
+  lastPointer?: { x: number; y: number };
+  initialPositions: Record<string, { x: number; y: number }>;
+  animationFrameId?: number;
+  pendingUpdate: boolean;
+  hasMoved: boolean;
+  clickToken?: TokenEntity;
+  /** The press grabbed a token outside the selection: it is selected on release if it never moved, and a drag leaves the selection as it was. */
+  selectsOnRelease?: boolean;
+  /** Alt/Option was held at pointer down: the drag moves copies and leaves the originals. */
+  copyOnDrag?: boolean;
+  /** The token the pointer grabbed; the drag ruler measures its path. */
+  rulerTokenId?: string;
+  /** The walls the dragged tokens stop at (session view only), fixed when the drag starts. */
+  walls?: SessionDragWalls | null;
+  /** Where each dragged token stands now: under the pointer, or before the wall that stopped it. */
+  current?: Record<string, { x: number; y: number }>;
+}
+
+export class InteractionController implements ITokenInteractionController {
+  private viewport: Viewport;
+  private store: StoreApi<ViewAtlasState>;
+  private gridSystem: GridSystem;
+  private eventBus: EventEmitter;
+  private obsApp: App;
+  public isPlayerView: boolean;
+  
+  // Condition definitions provider — wired by PixiRendererOrchestrator
+  public conditionDefsProvider: (() => ConditionDefinition[]) | null = null;
+  /** The resources of the map's collection, for Kill and Reset. */
+  public resourceDefsProvider: ResourceDefsProvider = () => [];
+  
+  // Drag state
+  private dragState: DragState = {
+    isDragging: false,
+    dragIds: [],
+    dragStartPointer: { x: 0, y: 0 },
+    initialPositions: {},
+    pendingUpdate: false,
+    hasMoved: false
+  };
+  
+  // Hover handlers
+  private hoverHandlers: Record<string, { over: (e?: FederatedPointerEvent) => void; out: () => void }> = {};
+  private _currentHoverId: string | null = null;
+  /** The statblock preview the hover armed, hidden by itself: the token may have left the level shown since. */
+  private hoverPreview: TokenPreviewAnchor | null = null;
+  
+  // Callbacks for external systems
+  private onSelectionUpdate?: () => void;
+  private onTokenMove?: (tokenId: string, x: number, y: number) => void;
+  private getTokenSprite?: (tokenId: string) => TokenGroupContainer | null;
+  private updateUIPosition?: (tokenId: string, x: number, y: number) => void;
+  private settleToken?: (tokenId: string, x: number, y: number) => void;
+  /** What the view draws of the levels' maps, through which a dropped token falls; none without lighting. */
+  private artFloors: (() => ArtFloors | undefined) | undefined;
+  /** The map's size in world pixels, which sets how wide walls stop a dragged token. */
+  private mapSize: () => MapSize | null = () => null;
+  private updateControlsPosition?: (x: number, y: number, tokenSize: number) => void;
+  private onTokensHeldChange?: (tokenIds: string[]) => void;
+  private updateHandlePositions?: () => void;
+  private dragRuler?: DragRuler;
+  /** The map's movement rules and its tokens' speeds (`tokenMovement`); a view without them moves tokens as ever. */
+  private movement?: TokenMovement;
+  /** Where a lost pointer is heard while the pointer is down (`watchLostPointer`). */
+  private lostPointerTargets: { canvas: HTMLElement; win: Window | null } | null = null;
+  /** The popover of a change for the selection's tokens, made with the first one (`selectionResourceEntry`). */
+  private selectionEditing: SelectionResourceEditing | null = null;
+
+  constructor(
+    viewport: Viewport,
+    store: StoreApi<ViewAtlasState>,
+    gridSystem: GridSystem,
+    eventBus: EventEmitter,
+    obsApp: App,
+    isPlayerView: boolean = false
+  ) {
+    this.viewport = viewport;
+    this.store = store;
+    this.gridSystem = gridSystem;
+    this.eventBus = eventBus;
+    this.obsApp = obsApp;
+    this.isPlayerView = isPlayerView;
+  }
+
+  attachInteractionHandlers(_tokenId: string, _container: Container, _token: TokenEntity): void {
+    // No-op: sprites are non-interactive. Viewport-level dispatch handles all pointer events.
+  }
+
+  removeInteractionHandlers(_tokenId: string, _container: Container): void {
+    // No-op: sprites are non-interactive. Viewport-level dispatch handles all pointer events.
+  }
+
+  setupHoverHandlers(
+    _tokenId: string, 
+    _container: Container,
+    _onHover: (tokenId: string) => void,
+    _onHoverEnd: (tokenId: string) => void
+  ): void {
+    // No-op: sprites are non-interactive. Viewport-level dispatch drives hover state.
+  }
+
+
+  /** Called by TokenRenderer when viewport pointerdown hits a token. */
+  public handleViewportTokenPointerDown(tokenId: string, e: FederatedPointerEvent): void {
+    const activeTool = this.store.getState().activeTool;
+    if (activeTool === 'measure') {
+      return;
+    }
+
+    e.stopPropagation();
+
+    if (isSecondaryPress(e)) {
+      const token = mapTokens(levelObjects(this.store.getState()))[tokenId];
+      if (token && !this.isPlayerView) {
+        this.showContextMenu(token, e);
+      }
+      return;
+    }
+
+    const token = mapTokens(levelObjects(this.store.getState()))[tokenId];
+    if (!token) return;
+    if (this.isPlayerView) {
+      return;
+    }
+
+    this.prepareInteraction(token, e);
+  }
+
+  /** Starts a group drag for the given token IDs (click within selection bounding box). */
+  public handleViewportGroupDragStart(tokenIds: string[], e: FederatedPointerEvent): void {
+    if (!isPrimaryPress(e)) return;
+
+    const activeTool = this.store.getState().activeTool;
+    if (activeTool !== 'select' && activeTool !== 'move') return;
+
+    e.stopPropagation();
+
+    if (this.isPlayerView || tokenIds.length === 0) {
+      return;
+    }
+
+    // Use the first token as the reference for prepareInteraction (it will detect the multi-selection)
+    const firstToken = mapTokens(levelObjects(this.store.getState()))[tokenIds[0]!];
+    if (!firstToken) return;
+
+    this.prepareInteraction(firstToken, e);
+  }
+
+  /** Called by TokenRenderer when viewport pointermove hovers over a token (or null to clear). */
+  public handleViewportTokenHover(tokenId: string | null, e?: FederatedPointerEvent): void {
+    // Clear previous hover if target changed
+    const prevId = this._currentHoverId ?? null;
+    if (prevId === tokenId) return;
+
+    if (prevId) {
+      this.handleHoverEnd(prevId);
+      if (this.hoverPreview) this.eventBus.emit('pin-hide-preview', { pin: this.hoverPreview });
+      this.hoverPreview = null;
+    }
+
+    this._currentHoverId = tokenId;
+
+    if (tokenId) {
+      this.handleHoverStart(tokenId);
+      // Emit hover preview for new token
+      const token = mapTokens(levelObjects(this.store.getState()))[tokenId];
+      // A token under the pointer may be dragged next: its speed is asked for ahead of the drag.
+      if (token) this.movement?.prepare([token]);
+      if (token?.kind === 'character' && e && token.statblockPath?.trim()) {
+        this.hoverPreview = {
+          id: token.id,
+          notePath: token.statblockPath,
+          x: token.x,
+          y: token.y,
+          type: 'token',
+          // Vitals travel with the pin so the preview can mirror them.
+          name: token.name,
+          resources: token.resources,
+          imagePath: token.imagePath,
+          ringColor: token.ringColor,
+          showRing: token.showRing,
+        };
+        this.eventBus.emit('pin-hover-preview', {
+          pin: this.hoverPreview,
+          screenX: e.clientX,
+          screenY: e.clientY,
+          pixiEvent: e,
+        });
+      }
+    }
+  }
+
+  /** Query whether a drag is in progress. */
+  public isDraggingTokens(): boolean {
+    return this.dragState.isDragging;
+  }
+
+  private prepareInteraction(token: TokenEntity, e: FederatedPointerEvent): void {
+    // A second pointer (another finger) pressing during a drag is not a new gesture: taking it
+    // would let go of the held tokens and leave the drag's history transaction open.
+    if (this.dragState.isDragging && this.dragState.hasMoved) return;
+
+    const { selectedIds, setSelection } = this.store.getState();
+    const isTokenSelected = selectedIds.includes(token.id);
+
+    // Shift-click toggles membership; removing never starts a drag.
+    if (e.shiftKey && isTokenSelected) {
+      setSelection(selectedIds.filter((id) => id !== token.id));
+      return;
+    }
+
+    this.viewport.plugins.pause('drag');
+    
+    // Clean up any existing listeners before attaching new ones
+    // This prevents accumulation if previous interaction didn't clean up properly
+    this.cleanupDragListeners();
+    
+    // A press without a hover before it (touch) asks for the grabbed token's speed here.
+    this.movement?.prepare([token]);
+
+    // Store the token for potential click handling
+    this.dragState.clickToken = token;
+    this.dragState.hasMoved = false;
+    this.dragState.copyOnDrag = e.altKey;
+    this.dragState.selectsOnRelease = false;
+    
+    // Determine which tokens to potentially drag
+    if (e.shiftKey) {
+      this.dragState.dragIds = [...selectedIds, token.id];
+      setSelection(this.dragState.dragIds);
+    } else if (isTokenSelected && selectedIds.length > 1) {
+      this.dragState.dragIds = [...selectedIds];
+    } else {
+      this.dragState.dragIds = [token.id];
+      this.dragState.selectsOnRelease = !isTokenSelected;
+    }
+
+    // Initialize drag state
+    const worldPos = this.viewport.toWorld(e.global);
+    this.dragState.dragStartPointer = { x: worldPos.x, y: worldPos.y };
+    this.dragState.lastPointer = this.dragState.dragStartPointer;
+    this.dragState.initialPositions = {};
+    
+    for (const id of this.dragState.dragIds) {
+      const sprite = this.getTokenSprite?.(id);
+      if (sprite) {
+        this.dragState.initialPositions[id] = { x: sprite.position.x, y: sprite.position.y };
+      }
+    }
+    
+    this.dragState.isDragging = true;
+    // Tokens outside the selection stay at rest until release, so a drag never grows their UI
+    this.reportHeld(this.dragState.dragIds.filter((id) => !selectedIds.includes(id)));
+    
+    // Don't set isDragging in store yet - wait for actual movement
+    
+    // Set up drag event listeners
+    this.viewport.on('pointermove', this.onPointerMove, this);
+    this.viewport.on('pointerup', this.onPointerUp, this);
+    this.viewport.on('pointerupoutside', this.onPointerUp, this);
+    this.watchLostPointer();
+  }
+
+  /**
+   * No release follows a pointer the browser cancels (a touch taken over by a system gesture)
+   * or a press that outlasts the window's focus, and PIXI reports neither: the drag then ends
+   * where the token is, as a drop.
+   */
+  private watchLostPointer(): void {
+    const canvas = this.viewport.options?.events?.domElement;
+    if (!canvas) return;
+    const win = canvas.ownerDocument.defaultView;
+    canvas.addEventListener('pointercancel', this.dropWhereItIs);
+    win?.addEventListener('blur', this.dropWhereItIs);
+    this.lostPointerTargets = { canvas, win };
+  }
+
+  private readonly dropWhereItIs = (): void => {
+    this.endDrag(this.dragState.lastPointer ?? this.dragState.dragStartPointer);
+  };
+
+  private onPointerMove = (e: FederatedPointerEvent) => {
+    if (!this.dragState.isDragging) return;
+    
+    const worldPos = this.viewport.toWorld(e.global);
+    this.dragState.lastPointer = { x: worldPos.x, y: worldPos.y };
+    const dx = worldPos.x - this.dragState.dragStartPointer.x;
+    const dy = worldPos.y - this.dragState.dragStartPointer.y;
+    
+    // Check if we've moved enough to consider it a drag (5 pixel threshold)
+    const moveDistance = Math.sqrt(dx * dx + dy * dy);
+    if (!this.dragState.hasMoved && moveDistance > 5) {
+      this.dragState.hasMoved = true;
+      this.store.getState().setIsDragging(true);
+      // The whole drag becomes one undo step; closed in onPointerUp.
+      beginHistoryTransaction(this.store);
+      const grabbedIndex = Math.max(0, this.dragState.dragIds.indexOf(this.dragState.clickToken?.id ?? ''));
+      if (this.dragState.copyOnDrag) this.dragCopiesInstead();
+      // Held are the tokens that move: the copies of an Alt-drag, before anything has moved.
+      this.reportHeld(this.dragState.dragIds);
+      this.startDragRuler(this.dragState.dragIds[grabbedIndex]);
+      this.dragState.walls = sessionDragWalls(this.store.getState(), this.mapSize());
+      this.dragState.current = {};
+    }
+    
+    // If we haven't moved enough, don't update positions
+    if (!this.dragState.hasMoved) return;
+
+    // Positions come from the pointer, not the sprites: an Alt-drag copy may still be loading its sprite.
+    // In session view each token follows the pointer only up to the first wall in its way.
+    const { walls, current = {} } = this.dragState;
+    const state = this.store.getState();
+    const updates = this.dragState.dragIds.flatMap((id) => {
+      const initPos = this.dragState.initialPositions[id];
+      if (!initPos) return [];
+      const target = { x: initPos.x + dx, y: initPos.y + dy };
+      const at = walls ? walls.follow(state, id, current[id] ?? initPos, target) : target;
+      current[id] = at;
+      return [{ id, x: at.x, y: at.y }];
+    });
+
+    for (const { id, x, y } of updates) {
+      const sprite = this.getTokenSprite?.(id);
+      if (!sprite) continue;
+      sprite.position.set(x, y);
+      this.updateUIPosition?.(id, x, y);
+    }
+
+    const rulerAt = this.dragState.rulerTokenId ? current[this.dragState.rulerTokenId] : undefined;
+    if (rulerAt) this.dragRuler?.update(rulerAt);
+
+    // The store follows the sprites on every move, so sight and a token's footprint in the dark
+    // move with the token in the same frame (as Foundry ties a token's vision to where it is drawn);
+    // a throttled store left the footprint trailing the sprite. Chromium sends one pointermove per
+    // frame, so this is one write per frame.
+    if (updates.length > 0) {
+      // Sight waits for the drop when the scene has sight on drop on (`SightTokens`). Persistence
+      // is debounced, and the open history transaction keeps these writes out of the undo stack.
+      this.store.getState().setTokenPositions(updates);
+    }
+    
+    // Schedule UI update
+    if (!this.dragState.pendingUpdate && !this.dragState.animationFrameId) {
+      this.dragState.pendingUpdate = true;
+      this.dragState.animationFrameId = window.requestAnimationFrame(() => this.throttledUIUpdate());
+    }
+  };
+
+  /** Swaps the drag over to fresh copies of the dragged tokens, which then become the selection. */
+  private dragCopiesInstead(): void {
+    const copies = copyDragSelection(this.store, this.dragState.dragIds, this.dragState.initialPositions, !this.dragState.selectsOnRelease);
+    if (!copies) return;
+    this.dragState.dragIds = copies.ids;
+    this.dragState.initialPositions = copies.initialPositions;
+  }
+
+  private startDragRuler(tokenId: string | undefined): void {
+    const origin = tokenId ? this.dragState.initialPositions[tokenId] : undefined;
+    if (!tokenId || !origin) return;
+    this.dragState.rulerTokenId = tokenId;
+    this.dragRuler?.begin(tokenId, origin);
+  }
+
+  private throttledUIUpdate = () => {
+    if (!this.dragState.pendingUpdate) return;
+    this.dragState.pendingUpdate = false;
+    delete this.dragState.animationFrameId;
+    
+    // Update controls position if single token selected
+    const selectedIds = this.store.getState().selectedIds;
+    if (selectedIds.length === 1) {
+      const selectedId = selectedIds[0];
+      if (selectedId) {
+        const sprite = this.getTokenSprite?.(selectedId);
+        if (sprite) {
+          const tokenSize = sprite.tokenSize || 70;
+          this.updateControlsPosition?.(sprite.position.x, sprite.position.y, tokenSize);
+        }
+      }
+    }
+    
+    // Emit drag update event
+    window.dispatchEvent(new CustomEvent('atlas-tokens-drag-update', { 
+      detail: { tokenIds: this.dragState.dragIds } 
+    }));
+    
+    // Trigger selection overlay update
+    this.onSelectionUpdate?.();
+  };
+
+  private cleanupDragListeners(): void {
+    // Remove all drag-related event listeners from viewport
+    this.viewport.off('pointermove', this.onPointerMove, this);
+    this.viewport.off('pointerup', this.onPointerUp, this);
+    this.viewport.off('pointerupoutside', this.onPointerUp, this);
+    this.lostPointerTargets?.canvas.removeEventListener('pointercancel', this.dropWhereItIs);
+    this.lostPointerTargets?.win?.removeEventListener('blur', this.dropWhereItIs);
+    this.lostPointerTargets = null;
+  }
+
+  private onPointerUp = (e: FederatedPointerEvent): void => {
+    this.endDrag(this.viewport.toWorld(e.global), { x: e.clientX, y: e.clientY, doc: this.viewport.options?.events?.domElement?.ownerDocument });
+  };
+
+  /**
+   * Ends the press or drag with the pointer at `worldPos`: a drag drops its tokens there, as one undo
+   * step. `menuAt` is where a choice of levels opens for tokens dropped into an elevator (none for a
+   * pointer that was lost), whose pick joins that step.
+   */
+  private endDrag(worldPos: { x: number; y: number }, menuAt: StairsMenuPlace | null = null): void {
+    if (!this.dragState.isDragging) return;
+    const wasDrag = this.dragState.hasMoved;
+    let stepHeld = false;
+
+    try {
+      this.dragState.isDragging = false;
+      
+      // Check if this was a click (no significant movement)
+      if (!this.dragState.hasMoved && this.dragState.clickToken) {
+        // A click selects a token the press found outside the selection
+        if (this.dragState.selectsOnRelease) this.store.getState().setSelection([this.dragState.clickToken.id]);
+        this.cleanupDragListeners();
+        this.viewport.plugins.resume('drag');
+        delete this.dragState.clickToken;
+        this.dragState.hasMoved = false;
+        return;
+      }
+      
+      // This was a drag
+      this.store.getState().setIsDragging(false);
+      
+      // Clean up event listeners
+      this.cleanupDragListeners();
+      
+      // Clean up animation frame
+      if (this.dragState.animationFrameId) {
+        window.cancelAnimationFrame(this.dragState.animationFrameId);
+        delete this.dragState.animationFrameId;
+      }
+      
+      // Calculate final positions
+      const dx = worldPos.x - this.dragState.dragStartPointer.x;
+      const dy = worldPos.y - this.dragState.dragStartPointer.y;
+      
+      const tokenUpdates: Array<{id: string, x: number, y: number}> = [];
+      const state = this.store.getState();
+      const snapToGrid = state.grid?.snapToGrid ?? true;
+      const tokens = mapTokens(levelObjects(state));
+      const { walls, current = {} } = this.dragState;
+      
+      for (const id of this.dragState.dragIds) {
+        const initPos = this.dragState.initialPositions[id];
+        if (!initPos) continue;
+        
+        const newX = initPos.x + dx;
+        const newY = initPos.y + dy;
+        const size = tokens[id]?.size || 1;
+        
+        // In session view the token comes to rest before walls and snaps only to a place it reaches
+        // (back where it was taken from when it reaches none); otherwise it snaps to the grid if enabled.
+        const finalPos = walls
+          ? walls.drop(state, { id, size, ...(current[id] ?? initPos) }, { x: newX, y: newY }) ?? initPos
+          : snapToGrid
+            ? this.gridSystem.snapTokenCenter(newX, newY, size)
+            : { x: newX, y: newY };
+        
+        // The token, with its resource bars and nameplate, glides from the pointer to where it snaps
+        this.settleToken?.(id, finalPos.x, finalPos.y);
+        
+        tokenUpdates.push({id, x: finalPos.x, y: finalPos.y});
+      }
+      
+      // What each token moved counts for its turn, in the drop's own undo step.
+      this.dragRuler?.countDrop(tokenUpdates.flatMap(({ id, x, y }) => {
+        const from = this.dragState.initialPositions[id];
+        return from ? [{ id, from, to: { x, y } }] : [];
+      }));
+      if (tokenUpdates.length > 0) stepHeld = dropTokensOnStairs(this.store, tokenUpdates, menuAt, this.artFloors?.());
+      
+      // Update UI
+      this.onSelectionUpdate?.();
+      
+      // Update handle positions
+      this.updateHandlePositions?.();
+      
+    } catch (error) {
+      console.error('[InteractionController] Error in onPointerUp handler:', error);
+    } finally {
+      if (wasDrag && !stepHeld) endHistoryTransaction(this.store);
+      this.dragRuler?.end();
+      delete this.dragState.rulerTokenId;
+      delete this.dragState.walls;
+      delete this.dragState.current;
+
+      // Always clean up event listeners to prevent accumulation
+      this.cleanupDragListeners();
+
+      // Always resume viewport drag
+      this.viewport.plugins.resume('drag');
+
+      // Reset drag state
+      this.dragState.pendingUpdate = false;
+      this.dragState.hasMoved = false;
+      delete this.dragState.clickToken;
+      this.dragState.selectsOnRelease = false;
+      this.reportHeld([]);
+    }
+  }
+
+  /** The store notes where the held tokens stand (`holdTokens`: sight waits there for the drop); then the token UI. */
+  private reportHeld(tokenIds: string[]): void {
+    holdTokens(this.store, tokenIds);
+    this.onTokensHeldChange?.(tokenIds);
+  }
+
+  private getConditionDefs(): ConditionDefinition[] {
+    return this.conditionDefsProvider?.() ?? [];
+  }
+
+  /** The selected tokens when the right-clicked token is one of them, otherwise that token alone. */
+  private contextMenuTargets(tokenId: string): string[] {
+    const state = this.store.getState();
+    const objects = levelObjects(state);
+    if (!state.selectedIds.includes(tokenId)) return [tokenId];
+    return state.selectedIds.filter((id) => mapTokens(objects)[id] !== undefined);
+  }
+
+  private showContextMenu(token: TokenEntity, e: FederatedPointerEvent): void {
+    const character = token.kind === 'character' ? token : undefined;
+    const entries: ContextMenuEntry[] = [];
+
+    const conditionDefs = this.getConditionDefs();
+    if (conditionDefs.length > 0) {
+      entries.push(conditionsSubmenu(this.store, conditionDefs, this.contextMenuTargets(token.id)));
+    }
+
+    // Size of the selection in one undo step; the clicked token's is ticked
+    const sizeTargets = this.contextMenuTargets(token.id);
+    entries.push(tokenSizeSubmenu(token.size, size => {
+      const state = this.store.getState();
+      const tokens = mapTokens(levelObjects(state));
+      state.updateTokens(sizeTargets.flatMap((id) => {
+        const current = tokens[id];
+        if (!current) return [];
+        const center = resizedTokenCenter(current, current.size || 1, size, state.grid);
+        return [{ id, changes: { size, x: center.x, y: center.y } }];
+      }));
+    }));
+
+    // The speed the selection moves by, where their statblocks state several
+    const movementMenu = this.movement ? tokenMovementSubmenu(this.store, token.id, this.contextMenuTargets(token.id), this.movement) : null;
+    if (movementMenu) entries.push(movementMenu);
+
+    // Move to another level of the scene, the selection in one undo step
+    const levelMenu = tokenLevelSubmenu(this.store, this.contextMenuTargets(token.id));
+    if (levelMenu) entries.push(levelMenu);
+
+    // How far off the floor the selection stands, where the map measures distances; the GM's to say
+    const heightMenu = this.isPlayerView ? null : tokenHeightSubmenu(this.store, this.contextMenuTargets(token.id),
+      () => mapMeasurementSettings(rulesLookup(this.obsApp), this.store.getState()));
+    if (heightMenu) entries.push(heightMenu);
+
+    // An area around each token of the selection that goes where the token goes; the GM's to give
+    const auraMenu = this.isPlayerView ? null : tokenAuraSubmenu(this.store, this.contextMenuTargets(token.id),
+      () => mapMeasurementSettings(rulesLookup(this.obsApp), this.store.getState()));
+    if (auraMenu) entries.push(auraMenu);
+
+    // Hide/Show the selection in one undo step; the clicked token decides which way
+    const currentToken = mapTokens(levelObjects(this.store.getState()))[token.id];
+    const isHidden = currentToken?.isHidden || false;
+    const hideTargets = this.contextMenuTargets(token.id);
+    entries.push({
+      type: 'item',
+      label: isHidden ? t('token.show') : t('token.hide'),
+      icon: isHidden ? 'eye' : 'eye-off',
+      onClick: () => this.store.getState().updateTokens(
+        hideTargets.map((id) => ({ id, changes: { isHidden: !isHidden } })),
+      ),
+    });
+
+    // Vision and carried light, for the selection the token belongs to
+    if (!this.isPlayerView) {
+      const lightPresets = mapLightPresets(this.obsApp, this.store.getState());
+      entries.push(...tokenLightingEntries(this.store, token.id, this.contextMenuTargets(token.id), lightPresets));
+    }
+
+
+    // Save the selection (or this token alone) as an encounter — DM only
+    if (!this.isPlayerView) {
+      const selectedIds = this.store.getState().selectedIds;
+      const groupIds = selectedIds.includes(token.id) ? selectedIds : [token.id];
+      entries.push({
+        type: 'item',
+        label: t('common.duplicate'),
+        icon: 'files',
+        onClick: () => this.store.getState().duplicateMapObjects(groupIds),
+      });
+      entries.push({
+        type: 'item',
+        label: t('common.copy'),
+        icon: 'copy',
+        onClick: () => copyMapObjects(this.store, groupIds),
+      });
+      entries.push({
+        type: 'item',
+        label: t('token.saveEncounter'),
+        icon: 'swords',
+        onClick: () => {
+          void saveMapTokensAsEncounter(this.obsApp, this.store, this.gridSystem, groupIds);
+        },
+      });
+    }
+
+    // Edit Token
+    entries.push({
+      type: 'item',
+      label: t('editToken.title'),
+      icon: 'edit',
+      onClick: () => this.showEditTokenModal(token),
+    });
+
+    // Initiative, for the selection the token belongs to; the clicked token decides which way
+    const initiativeEntries = this.store.getState().initiative?.entries || [];
+    const isInInitiative = initiativeEntries.some((entry) => entry.tokenId === token.id);
+    const initiativeTargets = this.contextMenuTargets(token.id);
+    entries.push({
+      type: 'item',
+      label: isInInitiative ? t('initiative.remove') : t('token.addInitiative'),
+      icon: 'swords',
+      onClick: () => this.handleInitiativeToggle(initiativeTargets, isInInitiative),
+    });
+
+
+    // A token without a statblock can be given one here. Editing and unlinking one are the asset manager's.
+    const obsApp = this.obsApp;
+    if (!character?.statblockPath) {
+      entries.push({
+        type: 'item',
+        label: t('am.menu.linkStatblock'),
+        icon: 'link',
+        onClick: () => {
+          if (obsApp && token.imagePath) {
+            const dialogService = new StatblockDialogService(obsApp);
+            const linkService = TokenStatblockLinkService.getInstance(obsApp);
+            dialogService.showStatblockDialog(
+              null,
+              (statblockPath: string | null) => {
+                if (!statblockPath) return;
+                runInBackground(
+                  linkService.linkTokenToStatblock(token.imagePath, statblockPath).then(() => {
+                    this.store.getState().updateToken(token.id, { statblockPath });
+                  }),
+                  `Linking statblock ${statblockPath}`,
+                  t('token.linkFailed'),
+                );
+              },
+              character?.name || t('initiative.token'),
+              { imagePath: token.imagePath, showRing: token.showRing },
+              newStatblockOption(obsApp, this.tokenCreationContext(token, character?.name || 'Token')),
+            );
+          }
+        },
+      });
+      const create = token.imagePath ? createStatblockEntry(obsApp, this.tokenCreationContext(token, character?.name || 'Token')) : null;
+      if (create) entries.push(create);
+    }
+
+    // Ring colour of the selection in one undo step; the clicked token's colour is ticked
+    const currentRingColor = token.ringColor;
+    const ringTargets = this.contextMenuTargets(token.id);
+    const ringColors = [
+      { name: t('color.default'), value: null },
+      { name: t('color.blue'), value: '#086ddd' },
+      { name: t('color.orange'), value: '#ec7500' },
+      { name: t('color.red'), value: '#e93147' },
+      { name: t('color.yellow'), value: '#e0ac00' },
+      { name: t('color.brown'), value: '#a97142' },
+      { name: t('color.purple'), value: '#7852ee' },
+      { name: t('color.green'), value: '#08b94e' },
+      { name: t('color.pink'), value: '#d53984' },
+      { name: t('color.cyan'), value: '#00bfbc' },
+      { name: t('color.gray'), value: '#ababab' },
+      { name: t('color.white'), value: '#ffffff' },
+    ];
+    entries.push({
+      type: 'submenu',
+      label: t('token.ringColor'),
+      icon: 'circle',
+      children: ringColors.map(color => ({
+        type: 'item' as const,
+        label: color.name,
+        checked: color.value === currentRingColor || (color.value === null && !currentRingColor),
+        onClick: () => this.store.getState().updateTokens(
+          ringTargets.map((id) => ({ id, changes: { ringColor: color.value ?? undefined } })),
+        ),
+      })),
+    });
+
+    // One change of a resource for every selected token that holds it (an area's damage), DM only
+    const selectionChange = this.isPlayerView ? null : selectionResourceEntry(
+      this.store, this.contextMenuTargets(token.id), this.resourceDefsProvider(),
+      (definition, count, apply) => this.openSelectionEditor({ x: e.clientX, y: e.clientY }, definition.name, count, apply),
+    );
+    if (selectionChange) entries.push(selectionChange);
+
+    // Reset the selection (only if one of its tokens tracks resources)
+    const shownTargets = this.contextMenuTargets(token.id);
+    if (this.anyTracksResources(shownTargets)) {
+      entries.push({
+        type: 'item',
+        label: t('token.reset'),
+        icon: 'rotate-ccw',
+        onClick: () => this.store.getState().resetTokens(shownTargets, this.resourceDefsProvider()),
+      });
+    }
+
+
+    // Destructive actions row (Kill + Delete side by side)
+    entries.push({
+      type: 'custom',
+      render: () => this.renderDestructiveRow(shownTargets),
+    });
+
+    openContextMenuGlobal(entries, { x: e.clientX, y: e.clientY });
+  }
+
+  handleDrag(
+    tokenId: string,
+    startX: number,
+    startY: number,
+    onMove: (x: number, y: number) => void,
+    onEnd: (finalX: number, finalY: number, path: Array<{x: number, y: number, timestamp: number}>) => void
+  ): void {
+    // This method is part of the interface but drag is handled internally
+    // Could be used for programmatic drag operations
+  }
+
+  emitContextMenu(tokenId: string, x: number, y: number): void {
+    this.eventBus.emit('token-context-menu', { tokenId, x, y });
+  }
+
+  // Callbacks setup
+  
+  setSelectionUpdateCallback(callback: () => void): void {
+    this.onSelectionUpdate = callback;
+  }
+
+  setTokenSpriteProvider(provider: (tokenId: string) => TokenGroupContainer | null): void {
+    this.getTokenSprite = provider;
+  }
+
+  setUIPositionUpdater(updater: (tokenId: string, x: number, y: number) => void): void {
+    this.updateUIPosition = updater;
+  }
+
+  /** What the view draws of the levels' maps (`ArtFloors`): a token dropped where a level below shows falls to it. */
+  setArtFloors(provider: (() => ArtFloors | undefined) | undefined): void {
+    this.artFloors = provider;
+  }
+
+  /** The map's size in world pixels (`sessionDragWalls`). */
+  setMapSize(read: () => MapSize | null): void {
+    this.mapSize = read;
+  }
+
+  /** How a dropped token gets from where the pointer left it to its place. */
+  setTokenSettler(settler: (tokenId: string, x: number, y: number) => void): void {
+    this.settleToken = settler;
+  }
+
+  setControlsPositionUpdater(updater: (x: number, y: number, tokenSize: number) => void): void {
+    this.updateControlsPosition = updater;
+  }
+
+  setHandlePositionUpdater(updater: () => void): void {
+    this.updateHandlePositions = updater;
+  }
+
+  /**
+   * Receives the tokens whose UI stays at rest while the pointer is down: the ones a press
+   * newly selects, every dragged token once a drag starts, and none on release.
+   */
+  setTokensHeldCallback(callback: (tokenIds: string[]) => void): void {
+    this.onTokensHeldChange = callback;
+  }
+
+  setTokenMovement(movement: TokenMovement): void {
+    this.movement = movement;
+  }
+
+  setDragRuler(ruler: DragRuler): void {
+    this.dragRuler = ruler;
+  }
+
+  /** The statblock editor opens from the map for the map's collection. */
+  private statblockEntryContext(): EntryContext {
+    const mapPath = this.store.getState().mapPath;
+    return { collectionId: mapPath ? AssetService.getInstance(this.obsApp).getCollectionForMap(mapPath) : null, from: 'map' };
+  }
+
+  /** A statblock made for the token: named after it, linked to it on this map too. */
+  private tokenCreationContext(token: TokenEntity, name: string): TokenCreationContext {
+    return {
+      ...this.statblockEntryContext(),
+      token: { imagePath: token.imagePath, name },
+      onLinked: (statblockPath) => this.store.getState().updateToken(token.id, { statblockPath }),
+    };
+  }
+
+  /** What a press on the bar of resource `key` changes: the selected tokens, two or more, and that resource. */
+  private selectionOffer(key: string): SelectionResource & { targets: string[] } | null {
+    if (this.isPlayerView) return null;
+    const state = this.store.getState();
+    const tokens = mapTokens(levelObjects(state));
+    const targets = state.selectedIds.filter((id) => tokens[id] !== undefined);
+    if (targets.length < 2) return null;
+    const offered = selectionResources(tokens, targets, this.resourceDefsProvider()).find(({ definition }) => definition.key === key);
+    return offered ? { targets, ...offered } : null;
+  }
+
+  /** Whether a press on the bar of resource `key` would change it for the selection. */
+  public offersSelectionResource(key: string): boolean {
+    return this.selectionOffer(key) !== null;
+  }
+
+  /**
+   * A press on the bar of resource `key` of a token in a selection of two or more: the popover of
+   * one change for every selected token that holds it. False where the press means nothing here.
+   */
+  public pressSelectionResource(key: string, at: { x: number; y: number }, onClose?: () => void): boolean {
+    const offer = this.selectionOffer(key);
+    if (!offer) return false;
+    this.openSelectionEditor(at, offer.definition.name, offer.count, (amount) => (
+      applySelectionResourceChange(this.store, offer.targets, this.resourceDefsProvider(), key, amount)
+    ), onClose);
+    return true;
+  }
+
+  private openSelectionEditor(
+    at: { x: number; y: number }, resourceName: string, count: number, onCommit: (amount: number) => void, onClose?: () => void,
+  ): void {
+    this.selectionEditing ??= new SelectionResourceEditing(this.viewport.options.events.domElement);
+    this.selectionEditing.open({ at, resourceName, count, onCommit, ...(onClose && { onClose }) });
+  }
+
+  /** The characters among the tokens `ids`, as the store holds them now. */
+  private charactersOf(ids: string[]): Character[] {
+    const tokens = mapTokens(levelObjects(this.store.getState()));
+    return ids.flatMap((id) => {
+      const shown = tokens[id];
+      return shown?.kind === 'character' ? [shown] : [];
+    });
+  }
+
+  private anyTracksResources(ids: string[]): boolean {
+    return this.charactersOf(ids).some((character) => visibleResources(character, this.resourceDefsProvider(), 'dm').length > 0);
+  }
+
+  private renderDestructiveRow(tokenIds: string[]): React.ReactNode {
+    return React.createElement(DestructiveActionRow, {
+      tokenIds,
+      store: this.store,
+      canKill: this.charactersOf(tokenIds).some((character) => isKillable(character, this.resourceDefsProvider())),
+      definitions: this.resourceDefsProvider(),
+      onClose: () => closeContextMenuGlobal(),
+    });
+  }
+
+  private handleInitiativeToggle(tokenIds: string[], remove: boolean): void {
+    if (!this.store.getState().initiativeTrackerOpen) {
+      this.store.getState().setInitiativeTrackerOpen(true);
+    }
+
+    for (const tokenId of tokenIds) {
+      const state = this.store.getState();
+      const { initiative, addToInitiative, removeFromInitiative } = state;
+      const entry = initiative.entries.find((e) => e.tokenId === tokenId);
+      const token = mapTokens(levelObjects(state))[tokenId];
+      if (remove && entry) removeFromInitiative(entry.id);
+      else if (!remove && !entry && token) addToInitiative(initiativeEntryForToken(token));
+    }
+  }
+
+  private handleHoverStart(tokenId: string): void {
+    // Hover start logic - could emit events or update UI
+  }
+
+  private handleHoverEnd(tokenId: string): void {
+    // Hover end logic - could emit events or update UI
+  }
+
+  private showEditTokenModal(token: TokenEntity): void {
+    const canvas = this.viewport.options?.events?.domElement;
+    openEditTokenModal(token, this.store, this.obsApp, this.resourceDefsProvider(), canvas?.ownerDocument);
+  }
+
+  destroyAll(): void {
+    // Clean up all hover handlers
+    for (const tokenId in this.hoverHandlers) {
+      delete this.hoverHandlers[tokenId];
+    }
+
+    // A drag interrupted by teardown must not leave its transaction open
+    if (this.dragState.hasMoved) endHistoryTransaction(this.store);
+    holdTokens(this.store, []);
+    this.dragRuler?.end();
+    this.selectionEditing?.close();
+
+    // Remove any active viewport listeners using the same cleanup method
+    this.cleanupDragListeners();
+    
+    // Clean up animation frame
+    if (this.dragState.animationFrameId) {
+      window.cancelAnimationFrame(this.dragState.animationFrameId);
+    }
+    
+    // Reset state
+    this.dragState = {
+      isDragging: false,
+      dragIds: [],
+      dragStartPointer: { x: 0, y: 0 },
+      initialPositions: {},
+      pendingUpdate: false,
+      hasMoved: false
+    };
+  }
+}
