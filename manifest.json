@@ -3,8 +3,8 @@
   "name": "Forked Atlas VTT Compatibility for Statblock Forge",
   "version": "0.17.0",
   "minAppVersion": "1.8.7",
-  "description": "Forked Atlas VTT Compatibility for Statblock Forge is an community fork of Atlas VTT with dedicated compatibility for Statblock Forge. It is not made, endorsed or supported by Atlas VTT or Atlas Online.",
+  "description": "An community fork of Atlas VTT with dedicated compatibility for Statblock Forge. It is not made, endorsed or supported by Atlas VTT or Atlas Online.",
   "author": "Guilherme Berger Lopes",
   "isDesktopOnly": true,
-  "authorUrl": "https://github.com/guilhermebergerlopes-oss/statblock-forge-for-atlas-vtt"
+  "authorUrl": "https://github.com/guilhermebergerlopes-oss"
 }
