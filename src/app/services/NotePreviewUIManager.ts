@@ -330,6 +330,19 @@ export class NotePreviewUIManager {
     }
   }
 
+  /**
+   * Ask an enabled Forge plugin to connect to this Atlas API now. This closes
+   * the startup-order gap where Forge loaded first, Atlas loaded afterwards,
+   * and no workspace transition occurred to trigger Forge's registration retry.
+   */
+  private requestForgeProviderRegistration(): void {
+    try {
+      this.app.workspace.trigger('statblock-forge-atlas-provider-registration-requested');
+    } catch {
+      // Atlas may be unloading; the caller will retain the normal fallback.
+    }
+  }
+
   /** Create the provider instance on first Ctrl-hover, without guessing ambiguous bindings. */
   private async ensureForgeSheetInstance(sceneId: string, tokenId: string, sourceId: string): Promise<void> {
     const api = this.sheetsAPI;
@@ -438,10 +451,16 @@ export class NotePreviewUIManager {
           && latestState.mapLoaded
           && latestState.mapPath === sceneIdAtHover
           && latestLinkedPath === linkedPath;
-        let providerResolution = source?.kind === 'forge' && stillSameSceneAndLink
-          ? resolveForgeStatblockPreviewForToken(this.sheetsAPI, sceneIdAtHover, pin.id, linkedPath)
-          : null;
-        if (providerResolution?.status === 'missing' && sceneIdAtHover && stillSameSceneAndLink) {
+        // Use the same API snapshot supplied to this map's ServiceManager, as in
+        // 0.17.2 (the last confirmed-working Ctrl-hover path). The handshake only
+        // asks Forge to register against this Atlas instance; it does not replace
+        // the API object used to resolve and render the sheet.
+        let providerResolution: ReturnType<typeof resolveForgeStatblockPreviewForToken> | null = null;
+        if (source?.kind === 'forge' && stillSameSceneAndLink) {
+          this.requestForgeProviderRegistration();
+          providerResolution = resolveForgeStatblockPreviewForToken(this.sheetsAPI, sceneIdAtHover, pin.id, linkedPath);
+        }
+        if (providerResolution?.status === 'missing' && sceneIdAtHover && stillSameSceneAndLink && this.sheetsAPI) {
           await this.ensureForgeSheetInstance(sceneIdAtHover, pin.id, linkedPath);
           // A provider read can outlive the hover. Recheck the scene, token link and hide epoch.
           const afterCreateState = this.store.getState();

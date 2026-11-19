@@ -91,8 +91,9 @@ function ResolvedView(props: LinkedStatblockProps & { templateId: TemplateId | n
   // A Fantasy Statblocks source is drawn by that plugin after the global resolver identifies it.
   if (result.kind === 'statblock' && result.statblock.source.kind === 'forge') {
     // Forge-native notes are drawn by the registered Forge provider in token previews.
-    // Outside a provider-backed preview, do not misrender Forge values through Fantasy Statblocks.
-    return <Hint>{t('statblockEditor.noAtlasStatblock')}</Hint>;
+    // Outside a provider-backed preview, do not misrender Forge values through Fantasy Statblocks
+    // or imply that the user must publish a second, Atlas-native statblock.
+    return <Hint>{t('statblockEditor.forgeRendererUnavailable')}</Hint>;
   }
   if (result.kind === 'statblock') return <FantasyView {...props} />;
   if (result.kind === 'unreadable') return <Hint>{t('statblockEditor.unreadable')}</Hint>;
@@ -103,8 +104,9 @@ function ResolvedView(props: LinkedStatblockProps & { templateId: TemplateId | n
 /**
  * The one mount of a statblock (§4.10, §6.1), for vault notes and for note
  * text outside the vault. Atlas-native statblocks are drawn with their
- * template; Forge-native notes are kept separate until Forge's renderer API is
- * integrated; Fantasy Statblocks' statblocks use its renderer while loaded,
+ * template; Forge-native notes are rendered by Forge's registered sheet provider
+ * in provider-backed token previews and otherwise show a connection hint; Fantasy
+ * Statblocks' statblocks use its renderer while loaded,
  * and the auto template while it is missing. It follows the note and never writes.
  */
 export function LinkedStatblock(props: LinkedStatblockProps): React.JSX.Element {

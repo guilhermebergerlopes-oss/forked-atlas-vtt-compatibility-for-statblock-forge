@@ -202,6 +202,7 @@ export const statblockEditor = {
   'statblockEditor.newStatblockMenu': 'New statblock…',
   'statblockEditor.newTemplate': 'New template',
   'statblockEditor.newerAtlas': 'Made with a newer Atlas',
+  'statblockEditor.forgeRendererUnavailable': 'This is a Forge statblock. Make sure Statblock Forge is enabled and its Atlas renderer is connected; no Atlas template is required.',
   'statblockEditor.noAtlasStatblock': 'This note has no Atlas statblock.',
   'statblockEditor.noFence': 'This note holds no statblock block to copy.',
   'statblockEditor.noStatblock': 'This note has no statblock.',

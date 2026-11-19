@@ -15,6 +15,7 @@ import { viewFrame } from '../packages/components/primitives/useKeepInView';
 import { observeResize } from '../utils/observeResize';
 import { scrollOnCtrlWheel } from './previewWheel';
 import { setProviderPreviewWindowHeight } from './providerPreviewScroll';
+import { clearProviderPreviewWindowWidth, setProviderPreviewWindowWidth } from './providerPreviewWidth';
 import { holdPreviewShown } from '../react/components/statblock/previewShown';
 import { t } from '../i18n';
 import { portalHost } from '../host/portalHost';
@@ -190,6 +191,8 @@ export class StatblockPreviewWindow {
 
     const gaps = previewEdgeGaps(element.ownerDocument, 20);
     const maxWindowHeight = Math.max(0, element.win.innerHeight - gaps.block * 2 - (this.controls?.offsetHeight ?? 0));
+    const maxWindowWidth = Math.max(0, element.win.innerWidth - gaps.inline * 2);
+    setProviderPreviewWindowWidth(element, mountPoint, maxWindowWidth);
     setProviderPreviewWindowHeight(element, mountPoint, maxWindowHeight);
   }
 
@@ -228,6 +231,7 @@ export class StatblockPreviewWindow {
     const session = this.providerSession;
     this.providerSession = null;
     this.element?.style.removeProperty('height');
+    clearProviderPreviewWindowWidth(this.element);
     if (!session) return;
     try { session.dispose(); }
     catch (error) { console.warn('[Atlas fork] Forge statblock preview cleanup failed.', error); }

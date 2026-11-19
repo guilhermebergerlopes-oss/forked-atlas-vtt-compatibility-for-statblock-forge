@@ -202,6 +202,7 @@ export const statblockEditor: Translation = {
   'statblockEditor.newStatblockMenu': 'Новый статблок…',
   'statblockEditor.newTemplate': 'Новый шаблон',
   'statblockEditor.newerAtlas': 'Создан более новой версией Atlas',
+  'statblockEditor.forgeRendererUnavailable': 'Это статблок Forge. Убедитесь, что Statblock Forge включён и его модуль отображения подключён к Atlas; шаблон Atlas не требуется.',
   'statblockEditor.noAtlasStatblock': 'В этой заметке нет статблока Atlas.',
   'statblockEditor.noFence': 'В этой заметке нет блока statblock для копирования.',
   'statblockEditor.noStatblock': 'В этой заметке нет статблока.',

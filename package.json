@@ -1,6 +1,6 @@
 {
   "name": "forked-atlas-vtt-compatibility-for-statblock-forge",
-  "version": "0.17.1",
+  "version": "0.17.2",
   "main": "dist/main.js",
   "scripts": {
     "dev": "cross-env COPY_ON_CHANGE=true vite build --watch",

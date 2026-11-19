@@ -2,6 +2,18 @@
 
 <!-- Generated from changelog/*.md. Run npm run changelog:generate. -->
 
+## 0.17.2 — Forge Ctrl-hover preview compatibility
+
+2026-11-19
+
+### Fixed
+
+- Ctrl-hover previews for Forge provider statblocks use the effective sheet width configured by the Template, including a per-statblock width override when present. The preview only narrows when the available viewport cannot fit the configured width.
+- Provider previews wait until the renderer session is ready, measure the rendered sheet, and constrain tall previews to the available height so long statblocks scroll inside their own body.
+- Map views resolve Forge provider instances through the public API snapshot supplied to their ServiceManager, preserving the API handoff used by the original 0.17.2 preview flow.
+- Before resolving a Forge-native preview, Atlas requests provider registration against that same API instance and then resolves the provider again. The renderer is available before the token sheet instance is created or reused.
+- Provider updates recalculate the preview dimensions while retaining the configured Template width and internal scrolling behavior.
+
 ## 0.17.1 — Provider statblock preview scrolling
 
 2026-11-19
