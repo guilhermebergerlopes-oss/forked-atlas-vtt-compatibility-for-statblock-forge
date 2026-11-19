@@ -2,6 +2,15 @@
 
 <!-- Generated from changelog/*.md. Run npm run changelog:generate. -->
 
+## 0.17.1 — Provider statblock preview scrolling
+
+2026-11-19
+
+### Fixed
+
+- Ctrl+hover previews for provider-rendered statblocks now wait for the provider's render session to become ready, measure the complete sheet, and constrain long previews to a definite height so long Forge statblocks scroll inside their own body.
+- Provider updates recalculate the preview height after the rendered sheet changes.
+
 ## 0.17.0 — Armarium, documentation and the dice tray
 
 2026-11-18
