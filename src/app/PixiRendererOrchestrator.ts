@@ -492,7 +492,7 @@ export class PixiRendererOrchestrator { // Renamed class
     this.audioTool = new AudioTool(this.eventBus);
 
     // Initialize SoundRegistry and SpatialAudioEngine
-    const pluginDir = this.store.getState().plugin?.manifest?.dir ?? `${this.obsApp.vault.configDir}/plugins/statblock-forge-forked-atlas-vtt-compatibility`;
+    const pluginDir = this.store.getState().plugin?.manifest?.dir ?? `${this.obsApp.vault.configDir}/plugins/forked-atlas-vtt-compatibility-for-statblock-forge`;
     this.soundRegistry = new SoundRegistry(this.obsApp, pluginDir);
     void this.soundRegistry.scanCustomSounds();
     this.bufferCache = new AudioBufferCache(() => new AudioContext(), this.obsApp, this.soundRegistry);

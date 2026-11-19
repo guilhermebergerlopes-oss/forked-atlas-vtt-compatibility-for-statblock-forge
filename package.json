@@ -1,5 +1,5 @@
 {
-  "name": "statblock-forge-forked-atlas-vtt-compatibility",
+  "name": "forked-atlas-vtt-compatibility-for-statblock-forge",
   "version": "0.17.0",
   "main": "dist/main.js",
   "scripts": {
@@ -7,7 +7,7 @@
     "obsidian": "node scripts/obsidian-cli.js",
     "obsidian:help": "node scripts/obsidian-cli.js help",
     "obsidian:print-bin": "node scripts/obsidian-cli.js --print-bin",
-    "obsidian:reload": "node scripts/obsidian-cli.js plugin:reload id=statblock-forge-forked-atlas-vtt-compatibility",
+    "obsidian:reload": "node scripts/obsidian-cli.js plugin:reload id=forked-atlas-vtt-compatibility-for-statblock-forge",
     "obsidian:errors": "node scripts/obsidian-cli.js dev:errors",
     "obsidian:console": "node scripts/obsidian-cli.js dev:console",
     "build": "cross-env COPY_ON_CHANGE=false vite build",

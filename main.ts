@@ -175,7 +175,7 @@ export default class AtlasVTTPlugin extends Plugin {
     };
   }
 
-  /** Consumer discovery: app.plugins.plugins['statblock-forge-forked-atlas-vtt-compatibility'].publicAPI. */
+  /** Consumer discovery: app.plugins.plugins['forked-atlas-vtt-compatibility-for-statblock-forge'].publicAPI. */
   get publicAPI(): AtlasPublicAPI {
     return this.publicAPIRuntime.api;
   }

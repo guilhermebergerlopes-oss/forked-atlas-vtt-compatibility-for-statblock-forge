@@ -164,7 +164,7 @@ function printHelp() {
       '',
       'Examples:',
       '  node scripts/obsidian-cli.js help',
-      '  node scripts/obsidian-cli.js --vault test-vault plugin:reload id=statblock-forge-forked-atlas-vtt-compatibility',
+      '  node scripts/obsidian-cli.js --vault test-vault plugin:reload id=forked-atlas-vtt-compatibility-for-statblock-forge',
       '  node scripts/obsidian-cli.js --vault test-vault dev:errors',
       '',
     ].join('\n')

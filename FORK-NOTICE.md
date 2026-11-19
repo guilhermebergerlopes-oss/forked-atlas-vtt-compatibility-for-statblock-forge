@@ -1,6 +1,6 @@
 # Fork notice
 
-Statblock Forge: Forked Atlas VTT Compatibility is a modified version of Atlas VTT, originally created by Fabian Urbanek and distributed under GNU AGPL-3.0-only. This fork preserves the upstream LICENSE and third-party notices. The fork has its own plugin name and ID and is created and maintained separately by Guilherme Berger Lopes. It is not an official Atlas VTT build and is not endorsed or supported by Atlas VTT or Atlas Online.
+Forked Atlas VTT Compatibility for Statblock Forge is a modified version of Atlas VTT, originally created by Fabian Urbanek and distributed under GNU AGPL-3.0-only. This fork preserves the upstream LICENSE and third-party notices. The fork has its own plugin name and ID and is created and maintained separately by Guilherme Berger Lopes. It is not an official Atlas VTT build and is not endorsed or supported by Atlas VTT or Atlas Online.
 
 This release is rebased on Atlas VTT 0.17.0 (upstream source commit `6faf59e9dd3f6441de727693e00fa1e659d350db`). The fork keeps its own Obsidian plugin ID and does not use the official Atlas VTT icon.
 
